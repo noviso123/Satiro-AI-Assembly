@@ -117,6 +117,13 @@ trechos e passa a responder com base nele, citando o nome do arquivo.
   verificável nas fontes; não é raciocínio do modelo.
 - **Limpar conversa:** apaga a conversa da tela e reinicia o chat, esquecendo o histórico. Documentos e
   correções continuam salvos.
+- **Restaurar padrão de fábrica** (painel de configurações): volta tudo ao estado original — modelo de
+  fábrica, configurações padrão, sem correções, sem documentos e sem aprendizado contínuo. **Nada é
+  apagado:** o que existia é movido para `dados\backups\antes-do-reset-<data-hora>\`. Para voltar a um
+  backup, copie os arquivos de volta manualmente. O modelo de fábrica fica em `dados\fabrica\`.
+
+Todas as ações destrutivas pedem confirmação dentro da própria página (botões Confirmar e Cancelar).
+O reset exige digitar a palavra RESTAURAR.
 
 ### 2. Conversar pela interface visual
 

@@ -1,0 +1,7 @@
+movss [rbx+r8*4], xmm2
+movss xmm2, [rbx+r8*4]
+movss [r15+r8*4+64], xmm0
+movss xmm0, [r15+r8*4+64]
+movss [rbx+rdx*4], xmm1
+addss xmm2, xmm0
+mulss xmm0, xmm1

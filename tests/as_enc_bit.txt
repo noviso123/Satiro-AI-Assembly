@@ -1,0 +1,13 @@
+bsr rdx, rax
+bsr eax, ebx
+bsr r8, r9
+bsf rcx, rdx
+bsf r12d, esi
+bsr rax, [rsp+8]
+bsf rdi, [r15+r8*8]
+bts rax, rcx
+btr r8, r9
+bt rdx, rax
+btc eax, ebx
+bts r12d, esi
+btr r15, rbx

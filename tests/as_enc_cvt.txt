@@ -1,0 +1,7 @@
+cvtss2sd xmm0, xmm0
+cvtss2sd xmm9, [rsi+rax*4+8]
+cvtsd2ss xmm0, xmm0
+cvtsd2ss xmm3, [rdi]
+movaps xmm0, xmm2
+movaps xmm9, xmm1
+movaps xmm3, [rsi]

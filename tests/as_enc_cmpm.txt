@@ -1,0 +1,6 @@
+cmp edx, dword [r10+rcx*4]
+mov edx, dword [rbx+rcx*4]
+cmp dword [rbx+rcx*4], 0
+cmp edx, [r10+rcx*4]
+mov eax, [r10+rcx*4]
+movss xmm2, [r10+rcx*4]

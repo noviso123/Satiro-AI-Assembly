@@ -1,0 +1,9 @@
+vbroadcastss ymm6, xmm0
+vbroadcastss ymm1, [rdx+rcx*4]
+vmaxps ymm0, ymm0, [rbx+r9*4]
+vmulps ymm0, ymm1, [rbx+r9*4]
+vmovaps ymm3, ymm2
+vaddps xmm0, xmm7, xmm1
+vextractf128 xmm1, ymm7, 1
+vdivps ymm1, ymm1, ymm0
+vsubps ymm0, ymm0, ymm6

@@ -1,0 +1,11 @@
+vxorpd ymm3, ymm3, ymm3
+vxorpd ymm5, ymm5, ymm5
+vmovupd ymm1, [rsi+32]
+vmovupd ymm1, [rsi+96]
+vfmadd231pd ymm3, ymm1, [rdi+32]
+vfmadd231pd ymm5, ymm1, [rdi+96]
+vaddpd ymm0, ymm0, ymm3
+vaddpd ymm4, ymm4, ymm5
+vmovupd ymm5, [rdi+32]
+vfmadd231pd ymm5, ymm4, ymm2
+vmovupd [rdi+32], ymm5

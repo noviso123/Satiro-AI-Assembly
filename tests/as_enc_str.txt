@@ -1,0 +1,7 @@
+movsd
+rep movsd
+rep movsb
+rep stosq
+movsd xmm0, [rsi]
+movsd [rdi], xmm1
+movsq

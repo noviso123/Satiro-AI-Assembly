@@ -1,0 +1,44 @@
+test rax, rbx
+test al, 3
+test eax, 0x1234
+test byte [rbx], 5
+test qword [rbx+8], rax
+not rax
+neg ecx
+not byte [rbx]
+mul rdx
+div ecx
+idiv qword [rsp+8]
+imul rbx
+inc rax
+dec ecx
+inc byte [rbx]
+dec qword [rbp+16]
+shl rax, 3
+shr ecx, 1
+sar rdx, cl
+rol al, 4
+ror dword [rbx], 1
+movzx eax, byte [rbx]
+movzx rax, bl
+movzx ecx, sil
+movzx eax, word [rbx+2]
+movsx rax, byte [rbx]
+movsx eax, dl
+movsxd rax, dword [rbx]
+movsxd rcx, edx
+imul rax, rbx
+imul ecx, [rbx+4], 10
+imul rdx, rsi, 1000
+setne al
+sete byte [rbx]
+setg r9b
+stosb
+rep stosq
+rep movsb
+repne cmpsb
+rep stosd
+nop
+cpuid
+xgetbv
+cqo

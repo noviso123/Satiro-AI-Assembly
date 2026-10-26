@@ -1,0 +1,33 @@
+movsd xmm0, [rbx]
+movsd xmm1, xmm2
+movsd [rbx+8], xmm3
+addsd xmm0, xmm1
+mulsd xmm8, [rsi]
+subsd xmm0, [rbx+16]
+divsd xmm1, xmm2
+sqrtsd xmm0, xmm0
+minsd xmm2, xmm3
+maxsd xmm0, [rdx]
+comisd xmm0, xmm1
+xorpd xmm0, xmm0
+andpd xmm1, [rbx]
+cvtsi2sd xmm0, rax
+cvtsi2sd xmm9, eax
+cvttsd2si rax, xmm0
+cvttsd2si ecx, [rbx]
+cvtsd2si r8, xmm1
+vmovupd ymm0, [rbx]
+vmovupd [rbx], ymm1
+vmovapd ymm2, ymm3
+vaddpd ymm0, ymm1, [rbx]
+vmulpd ymm2, ymm3, ymm4
+vxorpd ymm0, ymm0, ymm0
+vhaddpd ymm1, ymm2, ymm3
+vfmadd231pd ymm0, ymm1, [rdi]
+vfmadd231pd ymm0, ymm1, ymm2
+vbroadcastsd ymm0, [rbx]
+vextractf128 xmm1, ymm2, 1
+vpermilpd ymm0, ymm1, 5
+vzeroupper
+vmaxsd xmm0, xmm1, xmm2
+vmaxpd ymm8, ymm9, [rbx+32]

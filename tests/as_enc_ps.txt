@@ -1,0 +1,32 @@
+movss xmm0, [rsi]
+movss [rdi+8], xmm1
+movss xmm2, xmm3
+addss xmm0, xmm1
+mulss xmm8, [r9+r10*4]
+subss xmm1, xmm9
+divss xmm4, [rsp+16]
+sqrtss xmm5, xmm6
+maxss xmm0, xmm1
+minss xmm2, [rax]
+comiss xmm0, xmm1
+xorps xmm3, xmm3
+addps xmm1, xmm2
+mulps xmm7, xmm8
+cvtsi2ss xmm0, eax
+cvtsi2ss xmm1, rax
+cvttss2si eax, xmm2
+vmovups ymm0, [rsi]
+vmovups [rdi+32], ymm1
+vmovaps ymm2, ymm3
+vaddps ymm0, ymm1, [rsi+32]
+vsubps ymm2, ymm3, ymm4
+vmulps ymm5, ymm6, ymm7
+vdivps ymm8, ymm9, ymm10
+vminps ymm1, ymm1, ymm2
+vxorps ymm3, ymm3, ymm3
+vfmadd231ps ymm0, ymm1, [rdi]
+vfmadd231ps ymm3, ymm1, ymm2
+vbroadcastss ymm2, xmm0
+vhaddps xmm0, xmm0, xmm0
+vpermilps xmm1, xmm0, 177
+vpermilps xmm1, xmm0, 78

@@ -1,0 +1,38 @@
+; literais de ponto flutuante (dq = double, dd = single). Comparados ao NASM byte a byte.
+; empates exatos (ex.: 4503599627370497.5) nao entram aqui: o NASM arredonda diferente. Referencia MSVC strtod: 498 (par).
+dq 0.0
+dq -0.0
+dq 1.0
+dq -1.0
+dq 0.5
+dq 0.1
+dq 0.2
+dq 0.3
+dq 0.30000000000000004
+dq 2.5
+dq -2.5
+dq 3.141592653589793
+dq 2.718281828459045
+dq 1e12
+dq 1.0e12
+dq 1E12
+dq 1.0e-3
+dq 1e-3
+dq 6.02214076e23
+dq 1.7976931348623157e308
+dq 2.2250738585072014e-308
+dq 1e22
+dq 1e23
+dq 123456789.123456789
+dq 9007199254740993
+dq 9007199254740993.0
+dq 0.1, 0.2, 0.3
+dq 1.5, -2.25, 1e-10
+dd 0.1
+dd -2.5
+dd 3.14159
+dd 1e38
+dd 3.4028234663852886e38
+dd 1.1754943508222875e-38
+dd 16777217.0
+dd 0.3, 1.0e-5

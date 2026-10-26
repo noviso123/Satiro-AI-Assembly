@@ -1,0 +1,38 @@
+; casos de memoria (fase 2). tlab: rotulo em .text (db 0x90) definido antes da instrucao.
+mov rax, [rbx]
+mov rax, [rsp]
+mov rax, [r12]
+mov rax, [rbp]
+mov rax, [r13]
+mov rax, [rbx+8]
+mov rax, [rbx+300]
+mov rax, [rbx-8]
+mov rax, [rbx+rcx*8]
+mov rax, [rbx+rcx*8+16]
+mov rax, [r12+r13*4]
+mov rax, [rsp+rax*2]
+mov eax, [rbx+4]
+mov al, [rbx]
+mov ax, [rbx]
+mov qword [rbx], 5
+mov dword [rbx+4], 7
+mov byte [rbx], 9
+mov [rbx], rax
+mov [r9+r10*8+8], r11
+add rax, [rbx]
+add [rbx], rax
+add qword [rbx], 1
+add dword [rbx+8], 200
+sub rsp, [rbp+8]
+cmp byte [rsi], 0
+lea rax, [rbx+rcx*8+4]
+lea rsi, [rsp+8]
+push qword [rbx]
+pop qword [rbx]
+call [rbx+8]
+mov rax, [tlab]
+mov rax, [tlab+4]
+lea rax, [tlab]
+mov rax, [tlab-3]
+mov [tlab], eax
+call tlab

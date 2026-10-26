@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Satiro-IA</title>
+<style>
+  :root { --fundo:#f5f5f2; --cartao:#ffffff; --texto:#1d1d1b; --suave:#6b6b66; --eu:#2f6f4f; --ia:#e9e8e2; --borda:#d8d7d0; --aviso:#8a5a00; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fundo:#161614; --cartao:#1f1f1c; --texto:#ecebe6; --suave:#9a9a92; --eu:#3f8f66; --ia:#2a2a26; --borda:#33332e; --aviso:#e0b060; }
+  }
+  :root[data-theme="dark"] { --fundo:#161614; --cartao:#1f1f1c; --texto:#ecebe6; --suave:#9a9a92; --eu:#3f8f66; --ia:#2a2a26; --borda:#33332e; --aviso:#e0b060; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--fundo); color:var(--texto); font:16px/1.5 system-ui, sans-serif; height:100vh; display:flex; flex-direction:column; }
+  header { padding:12px 20px; border-bottom:1px solid var(--borda); background:var(--cartao); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  header h1 { font-size:18px; margin:0; }
+  header p { margin:2px 0 0; font-size:13px; color:var(--suave); }
+  .secundario { font:inherit; font-size:13px; padding:6px 12px; border-radius:8px; border:1px solid var(--borda); background:transparent; color:var(--suave); cursor:pointer; }
+  details.painel { padding:8px 20px; border-bottom:1px solid var(--borda); background:var(--cartao); }
+  details.painel summary { cursor:pointer; font-size:14px; color:var(--suave); }
+  .grade { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px 14px; margin:10px 0; font-size:13px; }
+  .grade label { display:flex; flex-direction:column; gap:3px; }
+  .grade input[type=number] { font:inherit; padding:5px 8px; border-radius:8px; border:1px solid var(--borda); background:var(--fundo); color:var(--texto); }
+  .linha-check { display:flex; align-items:center; gap:8px; font-size:14px; }
+  #docs { font-size:13px; margin:8px 0 0; }
+  #docs .doc { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:4px 0; border-bottom:1px dashed var(--borda); }
+  #docs button { font:inherit; font-size:12px; padding:2px 8px; border-radius:6px; border:1px solid var(--borda); background:transparent; color:var(--suave); cursor:pointer; }
+  #conversa { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
+  .linha { display:flex; flex-direction:column; max-width:78%; }
+  .linha.eu { align-self:flex-end; align-items:flex-end; }
+  .linha.ia { align-self:flex-start; align-items:flex-start; }
+  .bolha { padding:10px 14px; border-radius:14px; white-space:pre-wrap; word-wrap:break-word; }
+  .eu .bolha { background:var(--eu); color:#fff; border-bottom-right-radius:4px; }
+  .ia .bolha { background:var(--ia); border-bottom-left-radius:4px; }
+  .aviso { align-self:center; font-size:13px; color:var(--suave); max-width:90%; text-align:center; }
+  .nota { font-size:12px; color:var(--aviso); margin-top:3px; }
+  .passos { font-size:12px; color:var(--suave); margin-top:4px; max-width:100%; }
+  .passos summary { cursor:pointer; }
+  .passos ol { margin:6px 0 0 18px; padding:0; }
+  button.corrigir { margin-top:4px; font:inherit; font-size:12px; padding:2px 10px; border-radius:8px; border:1px solid var(--borda); background:transparent; color:var(--suave); cursor:pointer; }
+  .correcao { margin-top:6px; display:flex; flex-direction:column; gap:6px; width:100%; }
+  .correcao textarea { font:inherit; font-size:14px; padding:8px 10px; border-radius:10px; border:1px solid var(--borda); background:var(--fundo); color:var(--texto); min-height:60px; resize:vertical; }
+  .correcao .botoes { display:flex; gap:8px; }
+  .correcao button { font:inherit; font-size:13px; padding:4px 12px; border-radius:8px; border:0; background:var(--eu); color:#fff; cursor:pointer; }
+  .correcao button.cancelar { background:transparent; color:var(--suave); border:1px solid var(--borda); }
+  form { display:flex; gap:8px; padding:12px 20px; border-top:1px solid var(--borda); background:var(--cartao); align-items:flex-end; }
+  textarea.entrada { flex:1; resize:none; font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--borda); background:var(--fundo); color:var(--texto); height:48px; }
+  button { font:inherit; padding:0 18px; height:44px; border-radius:10px; border:0; background:var(--eu); color:#fff; cursor:pointer; }
+  button.anexar { background:transparent; color:var(--texto); border:1px solid var(--borda); }
+  button:disabled { opacity:.5; cursor:default; }
+  @media (max-width: 600px) { .linha { max-width:92%; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Satiro-IA</h1>
+    <p>Transformer em assembly. Anexe documentos, corrija e configure a geração.</p>
+  </div>
+  <button id="limpar" class="secundario" type="button">Limpar conversa</button>
+</header>
+
+<details class="painel" id="painel-config">
+  <summary>Configurações da IA</summary>
+  <div class="grade">
+    <label>Temperatura (0 = mais previsível)<input id="c_temperatura" type="number" step="0.05" min="0" max="2"></label>
+    <label>Top-k (opções consideradas)<input id="c_top_k" type="number" step="1" min="1" max="200"></label>
+    <label>Top-p (massa de probabilidade)<input id="c_top_p" type="number" step="0.05" min="0.05" max="1"></label>
+    <label>Repetição (1 = sem penalidade)<input id="c_repeticao" type="number" step="0.1" min="1" max="3"></label>
+    <label>Contexto (tokens vistos, até 256)<input id="c_contexto" type="number" step="8" min="8" max="256"></label>
+    <label>Tamanho máximo da resposta (tokens)<input id="c_max_tokens" type="number" step="10" min="10" max="400"></label>
+    <label>Semente (0 = aleatória)<input id="c_semente" type="number" step="1" min="0"></label>
+    <label>Mostrar resposta do modelo quando não sei (0 = não, 1 = sim)<input id="c_mostrar_modelo" type="number" step="1" min="0" max="1"></label>
+    <label>Pensamento profundo: mostrar os passos da resposta (0 = não, 1 = sim)<input id="c_pensamento_profundo" type="number" step="1" min="0" max="1"></label>
+  </div>
+  <button id="aplicar_config" type="button" class="secundario">Aplicar configurações</button>
+  <button id="reset" type="button" class="secundario" title="Volta tudo ao estado original. Nada é apagado: o que existia vai para um backup.">Restaurar padrão de fábrica</button>
+  <span id="status_config" style="font-size:12px;color:var(--suave);margin-left:8px;"></span>
+</details>
+
+<details class="painel" id="painel-docs">
+  <summary>Documentos anexados</summary>
+  <div id="docs"></div>
+</details>
+
+<div id="conversa"></div>
+
+<form id="formulario">
+  <button type="button" class="anexar" id="botao-anexar" title="Anexar PDF, Word, TXT, MD ou CSV">Anexar</button>
+  <input type="file" id="arquivo" accept=".pdf,.docx,.txt,.md,.csv" hidden>
+  <textarea id="entrada" class="entrada" placeholder="Escreva uma mensagem (Enter envia, Shift+Enter quebra linha)" autofocus></textarea>
+  <button id="enviar" type="submit">Enviar</button>
+</form>
+
+<script>
+  const conversa = document.getElementById('conversa');
+  const formulario = document.getElementById('formulario');
+  const entrada = document.getElementById('entrada');
+  const enviar = document.getElementById('enviar');
+  const TAMANHO_MAX = 15 * 1024 * 1024;
+
+  function avisoCentral(texto) {
+    const div = document.createElement('div');
+    div.className = 'aviso';
+    div.textContent = texto;
+    conversa.appendChild(div);
+    conversa.scrollTop = conversa.scrollHeight;
+    return div;
+  }
+
+  function bolha(quem, texto) {
+    const linha = document.createElement('div');
+    linha.className = 'linha ' + quem;
+    const b = document.createElement('div');
+    b.className = 'bolha';
+    b.textContent = texto;
+    linha.appendChild(b);
+    conversa.appendChild(linha);
+    conversa.scrollTop = conversa.scrollHeight;
+    return linha;
+  }
+
+  const ROTULOS = {
+    cadastrada: 'resposta conhecida (do treino)',
+    ensinada: 'resposta que você me ensinou',
+    documento: 'resposta baseada nos seus documentos',
+    modelo: 'gerada pelo modelo: pode estar errada',
+    nao_sei: 'eu não sei responder isso ainda'
+  };
+
+  function notaOrigem(linha, origem) {
+    const t = ROTULOS[origem];
+    if (t) {
+      const n = document.createElement('div');
+      n.className = 'nota';
+      n.textContent = t;
+      linha.appendChild(n);
+    }
+  }
+
+  // pensamento profundo: os passos que levaram à resposta
+  function adicionaPassos(linha, passos) {
+    if (!passos || !passos.length) return;
+    const d = document.createElement('details');
+    d.className = 'passos';
+    const s = document.createElement('summary');
+    s.textContent = 'Como cheguei a essa resposta (' + passos.length + ' passos)';
+    d.appendChild(s);
+    const ol = document.createElement('ol');
+    passos.forEach(p => { const li = document.createElement('li'); li.textContent = p; ol.appendChild(li); });
+    d.appendChild(ol);
+    linha.appendChild(d);
+  }
+
+  // botao "Corrigir" em cada resposta da IA: abre um campo para a resposta certa
+  function adicionaCorrecao(linha, pergunta) {
+    const btn = document.createElement('button');
+    btn.className = 'corrigir';
+    btn.textContent = 'Corrigir';
+    btn.addEventListener('click', () => {
+      btn.remove();
+      const area = document.createElement('div');
+      area.className = 'correcao';
+      const campo = document.createElement('textarea');
+      campo.placeholder = 'Qual é a resposta certa?';
+      const botoes = document.createElement('div');
+      botoes.className = 'botoes';
+      const salvar = document.createElement('button');
+      salvar.textContent = 'Salvar correção';
+      const cancelar = document.createElement('button');
+      cancelar.className = 'cancelar';
+      cancelar.textContent = 'Cancelar';
+      botoes.append(salvar, cancelar);
+      area.append(campo, botoes);
+      linha.appendChild(area);
+      campo.focus();
+      cancelar.addEventListener('click', () => { area.remove(); linha.appendChild(btn); });
+      salvar.addEventListener('click', async () => {
+        const resposta = campo.value.trim();
+        if (!resposta) { campo.focus(); return; }
+        salvar.disabled = true;
+        try {
+          const r = await fetch('/api/ensinar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pergunta: pergunta, resposta: resposta })
+          });
+          const dados = await r.json();
+          if (dados.erro) { avisoCentral('Não consegui salvar: ' + dados.erro); salvar.disabled = false; return; }
+          area.remove();
+          const nota = document.createElement('div');
+          nota.className = 'nota';
+          nota.textContent = 'corrigida por você: ' + resposta;
+          linha.appendChild(nota);
+          avisoCentral('Obrigado! Aprendi a resposta. Se você perguntar de novo, vou responder assim.');
+          if (dados.ciclo) {
+            avisoCentral('Já são correções suficientes: um novo modelo está sendo testado. Ele só passa a valer se não piorar nos testes.');
+          }
+        } catch (e) {
+          avisoCentral('Sem conexão com o servidor: ' + e.message);
+          salvar.disabled = false;
+        }
+      });
+    });
+    linha.appendChild(btn);
+  }
+
+  async function envia(texto) {
+    bolha('eu', texto);
+    const pensando = avisoCentral('pensando...');
+    enviar.disabled = true;
+    try {
+      const r = await fetch('/api/msg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ msg: texto })
+      });
+      const dados = await r.json();
+      pensando.remove();
+      if (dados.erro) { avisoCentral('Erro: ' + dados.erro); return; }
+      if (!dados.resposta) return;
+      const linha = bolha('ia', dados.resposta);
+      notaOrigem(linha, dados.origem);
+      adicionaPassos(linha, dados.passos);
+      if (dados.origem !== 'regra') { adicionaCorrecao(linha, texto); }
+    } catch (e) {
+      pensando.remove();
+      avisoCentral('Sem conexão com o servidor: ' + e.message);
+    } finally {
+      enviar.disabled = false;
+      entrada.focus();
+    }
+  }
+
+  formulario.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const texto = entrada.value.trim();
+    if (!texto) return;
+    entrada.value = '';
+    envia(texto);
+  });
+
+  entrada.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+      ev.preventDefault();
+      formulario.requestSubmit();
+    }
+  });
+
+  // ---- limpar conversa: zera a tela e o historico do chat (correcoes e documentos continuam) ----
+  document.getElementById('limpar').addEventListener('click', async () => {
+    if (!confirm('Limpar a conversa na tela? Documentos e correções continuam salvos.')) return;
+    try {
+      await fetch('/api/limpar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      conversa.innerHTML = '';
+      avisoCentral('Conversa limpa. Documentos e correções continuam salvos.');
+    } catch (e) { avisoCentral('Não consegui limpar: ' + e.message); }
+  });
+
+  // ---- documentos: anexar e listar ----
+  let acompanhando = null;
+
+  function mostraDocumentos(lista, pendentes) {
+    const div = document.getElementById('docs');
+    div.innerHTML = '';
+    (pendentes || []).forEach(p => {
+      const item = document.createElement('div');
+      item.className = 'doc';
+      const nome = document.createElement('span');
+      const erro = p.estado.startsWith('erro');
+      nome.textContent = p.nome + ' — ' + (erro ? p.estado : 'processando (arquivos grandes podem demorar)');
+      item.appendChild(nome);
+      if (erro) {
+        const descartar = document.createElement('button');
+        descartar.textContent = 'Descartar';
+        descartar.addEventListener('click', async () => {
+          await fetch('/api/upload/descartar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }) });
+          carregaDocumentos();
+        });
+        item.appendChild(descartar);
+      }
+      div.appendChild(item);
+    });
+    if (!lista || !lista.length) {
+      if (!(pendentes || []).length) div.append('Nenhum documento anexado. Use o botão Anexar para enviar PDF, Word, TXT, MD ou CSV.');
+      return;
+    }
+    lista.forEach(d => {
+      const item = document.createElement('div');
+      item.className = 'doc';
+      const nome = document.createElement('span');
+      nome.textContent = d.nome + ' (' + d.trechos + ' trechos)';
+      const remover = document.createElement('button');
+      remover.textContent = 'Remover';
+      remover.addEventListener('click', async () => {
+        if (!confirm('Remover "' + d.nome + '" das respostas? O texto vai para a pasta de removidos.')) return;
+        const r = await fetch('/api/documento/remover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: d.id }) });
+        const dados = await r.json();
+        if (dados.erro) { avisoCentral('Não consegui remover: ' + dados.erro); return; }
+        mostraDocumentos(dados.documentos);
+      });
+      item.append(nome, remover);
+      div.appendChild(item);
+    });
+  }
+
+  async function carregaDocumentos() {
+    try {
+      const r = await fetch('/api/documentos');
+      const dados = await r.json();
+      mostraDocumentos(dados.documentos, dados.pendentes);
+      // enquanto houver arquivo sendo processado, atualiza sozinho a lista
+      const ha = (dados.pendentes || []).some(p => p.estado === 'processando');
+      if (ha && !acompanhando) {
+        acompanhando = setInterval(async () => {
+          const r2 = await fetch('/api/documentos');
+          const d2 = await r2.json();
+          mostraDocumentos(d2.documentos, d2.pendentes);
+          if (!(d2.pendentes || []).some(p => p.estado === 'processando')) {
+            clearInterval(acompanhando); acompanhando = null;
+            avisoCentral('Um documento terminou de ser processado e já pode ser usado nas respostas.');
+          }
+        }, 4000);
+      }
+    } catch (e) { /* servidor fora do ar: tenta de novo na proxima acao */ }
+  }
+
+  // envia o arquivo em partes de 4 MB (funciona para arquivos grandes) e pede o processamento
+  async function enviaArquivo(arq) {
+    const TAM_PARTE = 4 * 1024 * 1024;
+    const aviso = avisoCentral('enviando "' + arq.name + '"...');
+    const lerBase64 = (blob) => new Promise((ok, falha) => {
+      const l = new FileReader();
+      l.onload = () => ok(l.result);
+      l.onerror = () => falha(new Error('falha ao ler o arquivo'));
+      l.readAsDataURL(blob);
+    });
+    try {
+      const ini = await fetch('/api/upload/inicio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: arq.name }) });
+      const di = await ini.json();
+      if (di.erro) throw new Error(di.erro);
+      for (let pos = 0; pos < arq.size; pos += TAM_PARTE) {
+        const dataUrl = await lerBase64(arq.slice(pos, Math.min(pos + TAM_PARTE, arq.size)));
+        const r = await fetch('/api/upload/parte', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: di.id, dados: dataUrl }) });
+        const dp = await r.json();
+        if (dp.erro) throw new Error(dp.erro);
+        aviso.textContent = 'enviando "' + arq.name + '": ' + Math.round(100 * Math.min(pos + TAM_PARTE, arq.size) / arq.size) + '%';
+      }
+      const fim = await fetch('/api/upload/fim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: di.id }) });
+      const df = await fim.json();
+      if (df.erro) throw new Error(df.erro);
+      aviso.textContent = 'Documento "' + arq.name + '" recebido. Processando em segundo plano: arquivos grandes podem levar minutos.';
+      carregaDocumentos();
+    } catch (e) {
+      aviso.textContent = 'Não consegui anexar "' + arq.name + '": ' + e.message;
+    }
+  }
+
+  document.getElementById('botao-anexar').addEventListener('click', () => document.getElementById('arquivo').click());
+
+  document.getElementById('arquivo').addEventListener('change', (ev) => {
+    const arq = ev.target.files[0];
+    ev.target.value = '';
+    if (!arq) return;
+    if (arq.size > 300 * 1024 * 1024) { avisoCentral('Arquivo muito grande (máximo 300 MB).'); return; }
+    enviaArquivo(arq);
+  });
+
+  // ---- restaurar padrao de fabrica ----
+  document.getElementById('reset').addEventListener('click', async () => {
+    const palavra = prompt('Isto restaura TUDO ao padrão de fábrica: correções, documentos, aprendizado, configurações e o modelo. Nada é apagado: tudo vai para uma pasta de backup. Para confirmar, digite RESTAURAR:');
+    if (palavra !== 'RESTAURAR') { statusConfig.textContent = 'reset cancelado'; return; }
+    try {
+      const r = await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmar: palavra }) });
+      const dados = await r.json();
+      if (dados.erro) { statusConfig.textContent = 'não restaurado: ' + dados.erro; return; }
+      mostraConfig(dados.config);
+      conversa.innerHTML = '';
+      carregaDocumentos();
+      avisoCentral('Padrão de fábrica restaurado. O que existia antes está em: ' + dados.backup);
+    } catch (e) { statusConfig.textContent = 'sem conexão: ' + e.message; }
+  });
+
+  // ---- configuracoes de geracao ----
+  const CAMPOS = ['temperatura','top_k','top_p','repeticao','contexto','max_tokens','semente','mostrar_modelo','pensamento_profundo'];
+  const statusConfig = document.getElementById('status_config');
+  function mostraConfig(c) { CAMPOS.forEach(n => { document.getElementById('c_' + n).value = c[n]; }); }
+  fetch('/api/config').then(r => r.json()).then(mostraConfig).catch(() => {});
+  document.getElementById('aplicar_config').addEventListener('click', async () => {
+    const corpo = {};
+    CAMPOS.forEach(n => { corpo[n] = document.getElementById('c_' + n).value; });
+    statusConfig.textContent = 'aplicando...';
+    try {
+      const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      const dados = await r.json();
+      if (dados.erro) { statusConfig.textContent = 'não aplicado: ' + dados.erro; return; }
+      mostraConfig(dados);
+      statusConfig.textContent = 'aplicado: a IA reiniciou com as novas configurações';
+    } catch (e) { statusConfig.textContent = 'sem conexão: ' + e.message; }
+  });
+
+  carregaDocumentos();
+  avisoCentral('Conectado. Digite uma mensagem, anexe um documento ou corrija uma resposta.');
+</script>
+</body>
+</html>

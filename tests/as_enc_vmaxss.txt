@@ -1,0 +1,2 @@
+vmaxss xmm0, xmm0, xmm1
+vmaxss xmm2, xmm3, xmm9

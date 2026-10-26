@@ -1,0 +1,9 @@
+vbroadcastss ymm4, [r10]
+vfmadd231ps ymm0, ymm4, [r11]
+vfmadd231ps ymm3, ymm4, [r11+96]
+vmovups ymm2, [rdx+64]
+vmovups [rdx+96], ymm3
+imul rsi, [rsp+8]
+add rsi, [rsp]
+mov r10d, [rsi+rax*4]
+mov [rdi+rax*4], r10d

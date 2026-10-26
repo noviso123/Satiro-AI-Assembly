@@ -1,0 +1,6 @@
+; imediato de 64 bits com endereco de rotulo (REX.W B8+r + ADDR64). Comparado ao NASM.
+mov rsi, tlab
+mov r8, tlab
+mov rax, tlab
+mov r15, tlab+4
+mov rdi, 5

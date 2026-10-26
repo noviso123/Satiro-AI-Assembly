@@ -1,0 +1,47 @@
+# Binarios e objetos de build (gerados por build\*.bat)
+build/
+*.obj
+*.exe
+*.dll
+
+# Dados grandes e derivados: nao cabem no GitHub e sao regeneraveis
+dados/corpus-ptbr-v1.tsv
+dados/corpus.tok
+dados/sft_pr.txt
+dados/sft_pr.tok
+dados/pira_*.tok
+
+# Estado local da interface e modelo de fabrica (modelos nao sao publicados)
+dados/fabrica/
+dados/documentos/
+dados/uploads/
+dados/backups/
+dados/config_chat.json
+
+# Correções e aprendizado do usuário (privados): nunca publicar
+dados/ensino_usuario.txt
+dados/ensino_historico.txt
+dados/modelo_vivo*
+dados/backup_vivo_antigo/
+dados/versoes/
+
+# Arquivos gerados pelo ciclo automático de correções
+dados/ciclo_*.tok
+dados/ciclo_*.bin
+dados/ciclo_estado.json
+dados/ciclo_log.txt
+dados/ciclo.lock
+build/chat_llm.exe.novo
+
+# Modelos treinados, otimizadores, checkpoints e logs
+dados/modelo_*
+dados/*.tmp
+dados/*.pos
+dados/*.otim
+treino_*_log.txt
+treino_*_err.txt
+PARAR_TREINO
+
+# Arquivos do sistema
+Thumbs.db
+desktop.ini

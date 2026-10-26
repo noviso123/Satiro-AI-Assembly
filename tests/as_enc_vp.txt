@@ -1,0 +1,2 @@
+vpermilpd xmm1, xmm0, 1
+vpermilpd ymm1, ymm0, 5

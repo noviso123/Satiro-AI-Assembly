@@ -1,0 +1,1 @@
+{ "N": 10, "tolerancia": 50, "lr": "1.0e-5", "comentario": "N = correcoes novas para disparar um ciclo. tolerancia = piora permitida (x1000 bits/byte) no texto de validacao; no teste basico nao pode piorar. lr = taxa do ajuste fino do ciclo (baixa, para nao esquecer)." }

@@ -128,6 +128,22 @@ e decodificados corretamente.
   varridos automaticamente para `dados\uploads\descartados\`.
 - A resposta com base em documento é uma **busca por frases**, não geração: o modelo não escreve o texto.
 
+**Ler, resumir e explicar** — peça direto no chat (ou use os botões **Resumir**/**Explicar** ao lado
+de cada documento no painel):
+
+| Você escreve | O que acontece |
+|---|---|
+| `Resuma o documento <nome>` | Resumo extrativo: as frases mais representativas, na ordem original, + principais termos (peso tf\*idf). `Resumo curto` devolve 3 frases. |
+| `Resuma tudo` (ou com vários anexados e sem nome) | Pede para você indicar qual; em breve, um por um. |
+| `Explique <tema>` | Passagens mais relevantes sobre o tema, em todos os documentos (ou só no citado). O tema não precisa estar no nome do arquivo. |
+| `Sobre o que fala o documento <nome>` | Resumo + termos-chave. |
+| `Liste os documentos` | Nomes e quantos trechos cada um tem. |
+
+**Aprendizado com os documentos:** quando o ciclo automático de correções roda, o **conteúdo dos
+documentos anexados entra no treino** do modelo candidato (limite de 2 MB por ciclo, registrados no
+`ciclo_log.txt`). Assim os pesos do modelo absorvem gradualmente o vocabulário e o domínio dos seus
+documentos — com o mesmo critério de sempre: o candidato só é promovido se não piorar nos testes.
+
 ### Pensamento profundo e limpeza de conversa
 
 - **Pensamento profundo** (opção na configuração): mostra os passos da resposta, como os termos da

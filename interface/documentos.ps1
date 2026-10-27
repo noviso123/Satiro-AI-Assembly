@@ -239,7 +239,7 @@ function Remove-Documento([string]$id) {
 }
 
 # Trechos dos documentos que tem termos em comum com a pergunta (os mais relevantes
-# primeiro). Peso por termo = IDF (termo raro entre os trechos pesa mais), como no
+# primeiro). Peso por termo = IDF (termo raro entre os trechos vale mais), como no
 # BM25 simplificado: um nome proprio exclusivo de um trecho vence uma palavra comum.
 function Busca-Documentos([string]$pergunta) {
     $tok = Palavras $pergunta
@@ -261,4 +261,75 @@ function Busca-Documentos([string]$pergunta) {
         if ($inter -ge $minimo) { [pscustomobject]@{ S = $s; Inter = $inter; Score = $peso } }
     }
     return @($achados | Sort-Object -Property Score -Descending | Select-Object -First 3)
+}
+
+# ---------- leitura e interpretacao dos documentos: resumo, topicos, explicacao ------
+
+# Documento citado na mensagem (por nome); se so ha um, e ele. $null se nenhum ou ambiguo
+function Alvo-Documento([string]$msg, [string]$excecao = '') {
+    $norm = Normaliza $msg
+    $todos = @($script:documentos | Where-Object { $_.nome -ne $excecao })
+    if ($todos.Count -eq 0) { return $null }
+    foreach ($d in $todos) {
+        $tokNome = @(Palavras $d.nome)
+        if ($tokNome.Count -eq 0) { continue }
+        $comuns = @($tokNome | Where-Object { $norm.Contains($_) }).Count
+        if ($comuns -ge 1 -and $comuns -ge [Math]::Ceiling($tokNome.Count / 2.0)) { return $d }
+    }
+    if ($todos.Count -eq 1) { return $todos[0] }
+    return $null
+}
+
+# Resumo extrativo: as frases mais representativas do documento, NA ORDEM ORIGINAL.
+# Peso da frase = soma do IDF dos termos / raiz do tamanho (frases longas nao ganham
+# so por serem longas), com um bonus pequeno para as frases de abertura do documento.
+function Resumo-Documento($doc, [int]$frases) {
+    $N = [Math]::Max($script:sentencas.Count, 1)
+    $lista = New-Object System.Collections.Generic.List[object]
+    $idx = 0
+    $total = @($script:sentencas | Where-Object { $_.Doc -eq $doc.nome }).Count
+    $bonusAbertura = if ($total -gt 0) { [Math]::Max(1, [int]($total / 5)) } else { 1 }
+    foreach ($s in $script:sentencas) {
+        if ($s.Doc -ne $doc.nome) { $idx++; continue }
+        $peso = 0.0
+        foreach ($t in $s.Tok) {
+            $df = 1
+            if ($script:df.ContainsKey($t)) { $df = [int]$script:df[$t] }
+            $peso += [Math]::Log(1.0 + $N / (1.0 + $df))
+        }
+        if ($s.Tok.Count -gt 0) { $peso = $peso / [Math]::Sqrt($s.Tok.Count) }
+        if ($idx -lt $bonusAbertura) { $peso += 0.5 }
+        $lista.Add([pscustomobject]@{ Idx = $idx; Texto = $s.Texto; Peso = $peso })
+        $idx++
+    }
+    $top = @($lista | Sort-Object Peso -Descending | Select-Object -First $frases | Sort-Object Idx)
+    return @($top | ForEach-Object { $_.Texto })
+}
+
+# Principais termos do documento: mais repetidos AQUI e raros no resto (tf * idf)
+function Topicos-Documento($doc, [int]$n) {
+    $tf = @{}
+    foreach ($s in $script:sentencas) {
+        if ($s.Doc -ne $doc.nome) { continue }
+        foreach ($t in $s.Tok) { if ($tf.ContainsKey($t)) { $tf[$t]++ } else { $tf[$t] = 1 } }
+    }
+    $N = [Math]::Max($script:sentencas.Count, 1)
+    $rank = foreach ($k in $tf.Keys) {
+        $df = 1
+        if ($script:df.ContainsKey($k)) { $df = [int]$script:df[$k] }
+        [pscustomobject]@{ Termo = $k; Peso = ($tf[$k] * [Math]::Log(1.0 + $N / (1.0 + $df))) }
+    }
+    return @($rank | Sort-Object Peso -Descending | Select-Object -First $n | ForEach-Object { $_.Termo })
+}
+
+# Passagens que explicam um tema: como a busca, mas devolve mais trechos e os termos
+function Explique-Documento([string]$tema, $alvo = $null, [int]$max = 5) {
+    $achados = @(Busca-Documentos $tema)
+    if ($alvo) { $achados = @($achados | Where-Object { $_.S.Doc -eq $alvo.nome }) }
+    if ($achados.Count -eq 0 -and $alvo) {
+        # o tema nao bateu no alvo: devolve o proprio resumo dele
+        $res = Resumo-Documento $alvo $max
+        return @($res | ForEach-Object { [pscustomobject]@{ S = [pscustomobject]@{ Doc = $alvo.nome; Texto = $_ }; Inter = 0; Score = 0 } })
+    }
+    return @($achados | Select-Object -First $max)
 }

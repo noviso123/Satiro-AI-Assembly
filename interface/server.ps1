@@ -304,6 +304,58 @@ function Responde([string]$msg) {
         $passos += 'Reconheci uma mensagem básica (cumprimento, identidade, agradecimento ou despedida).'
         return Monta $r 'regra' $passos $profundo
     }
+
+    # ---- comandos de LEITURA dos documentos: resumo, explicacao, topicos, lista ----
+    $nNorm = Normaliza $msg
+    $querLista = ($nNorm -match '^liste (os |as )?documentos' -or $nNorm -match '^quais (sao os )?documentos')
+    $querResumo = ($nNorm -match '^(resuma|resumo|resumir|sumarize|sumarizar)\b')
+    $querTopicos = ($nNorm -match '^(sobre o que (fala|trata)|do que (fala|trata|se trata)|principais termos)')
+    $querExplicar = ($nNorm -match '^(explique|explica)\b')
+    if ($querLista -or $querResumo -or $querTopicos -or $querExplicar) {
+        if ($script:documentos.Count -eq 0) {
+            $passos += 'Nao ha documentos anexados para ler.'
+            return Monta 'Voce ainda nao anexou nenhum documento. Use o botao Anexar (PDF, Word, TXT, MD ou CSV) e eu leio, resumo e explico o conteudo.' 'documento' $passos $profundo
+        }
+        if ($querLista) {
+            $passos += 'Listei os documentos anexados.'
+            $linhas = foreach ($d in $script:documentos) { '- ' + $d.nome + ' (' + $d.trechos + ' trechos)' }
+            return Monta ("Documentos anexados:`n" + ($linhas -join "`n")) 'documento' $passos $profundo
+        }
+        $alvo = Alvo-Documento $msg
+        if ($querExplicar) {
+            # explicar <tema>: o tema nao precisa estar no nome do arquivo; busca em
+            # todos os documentos (ou so no citado). O verbo sai do tema para nao
+            # contaminar a busca.
+            $tema = if ($nNorm.Contains(' ')) { ($nNorm -split ' ', 2)[1] } else { $nNorm }
+            $passos += ("Procurando passagens sobre '{0}' nos documentos." -f $tema)
+            $achados = @(Explique-Documento $tema $alvo 5)
+            if ($achados.Count -eq 0) {
+                $onde = if ($alvo) { "em '{0}'" -f $alvo.nome } else { 'nos documentos anexados' }
+                return Monta ("Nao encontrei passagens sobre esse tema {0}." -f $onde) 'documento' $passos $profundo
+            }
+            $linhas = foreach ($a in $achados) { '- ' + $a.S.Texto + '  (' + $a.S.Doc + ')' }
+            $texto = "O que encontrei sobre '{0}':`n{1}" -f $tema, ($linhas -join "`n")
+            return Monta $texto 'documento' $passos $profundo
+        }
+        if (-not $alvo) {
+            $nomes = ($script:documentos | ForEach-Object { '- ' + $_.nome }) -join "`n"
+            $passos += 'Ha mais de um documento e nao sei qual ler.'
+            return Monta ("Ha mais de um documento anexado. Diga o nome, por exemplo: ``Resuma o documento <nome>``. Anexados:`n" + $nomes) 'documento' $passos $profundo
+        }
+        $passos += ("Lendo o documento '{0}'." -f $alvo.nome)
+        if ($querResumo -or $querTopicos) {
+            $nFrases = 5
+            if ($nNorm -match 'curto|breve') { $nFrases = 3 }
+            $frases = @(Resumo-Documento $alvo $nFrases)
+            $topicos = @(Topicos-Documento $alvo 8)
+            $passos += ("Selecionei as {0} frases mais representativas e os principais termos (peso tf*idf)." -f $frases.Count)
+            $num = 1
+            $linhas = foreach ($f in $frases) { "{0}. {1}" -f $num++, $f }
+            $texto = "Resumo de '{0}' ({1} trechos no total):`n{2}`n`nPrincipais termos: {3}" -f $alvo.nome, $alvo.trechos, ($linhas -join "`n"), ($topicos -join ', ')
+            return Monta $texto 'documento' $passos $profundo
+        }
+    }
+
     $docs = @(Busca-Documentos $msg)
     if ($docs.Count -gt 0) {
         # frases iguais em documentos diferentes aparecem uma vez so

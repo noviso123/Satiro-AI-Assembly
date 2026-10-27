@@ -55,3 +55,6 @@ desktop.ini
 # Bootstrap do clone novo: o montador e o linker vem no repositorio
 !build/asm.exe
 !build/pelink.exe
+
+# copia temporaria do documento para o aprendizado do ciclo
+dados/ciclo_doc_origem.txt

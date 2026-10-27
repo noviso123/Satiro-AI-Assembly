@@ -98,6 +98,30 @@ try {
     for ($i = 0; $i -lt 2; $i++) { $ms.Write($base, 0, $base.Length) }
     for ($i = 0; $i -lt 8; $i++) { $ms.Write($conv, 0, $conv.Length) }
     for ($i = 0; $i -lt 20; $i++) { $ms.Write($ens, 0, $ens.Length) }
+    # 1b. aprendizado dos DOCUMENTOS ANEXADOS: o conteudo dos seus PDFs/TXT entra no
+    # treino (uma passada), limitado a 2 MB no total para o ciclo nao virar horas.
+    # O texto vai copiado para um nome fixo: nomes com espaco quebrariam o cmd.
+    $docsTok = New-Object IO.MemoryStream
+    $docsUsados = 0
+    $docsQtde = 0
+    $pastaDocs = Join-Path $dados 'documentos'
+    if (Test-Path $pastaDocs) {
+        foreach ($docTxt in (Get-ChildItem $pastaDocs -Filter '*.txt' | Sort-Object Length -Descending)) {
+            if ($docsUsados -ge 2097152) { break }
+            Copy-Item $docTxt.FullName (Join-Path $dados 'ciclo_doc_origem.txt') -Force
+            Roda "interface\ciclo\cod.bat dados\ciclo_doc_origem.txt dados\ciclo_doc.tok" | Out-Null
+            $toks = [IO.File]::ReadAllBytes((Join-Path $dados 'ciclo_doc.tok'))
+            $docsTok.Write($toks, 0, $toks.Length)
+            $docsUsados += $docTxt.Length
+            $docsQtde++
+            Registra ("aprendizado de documento: {0} ({1} KB de texto)" -f $docTxt.Name, [int]($docTxt.Length / 1KB))
+        }
+    }
+    if ($docsQtde -gt 0) {
+        $docArr = $docsTok.ToArray()
+        $ms.Write($docArr, 0, $docArr.Length)
+        Registra ("documentos no treino: {0} arquivo(s), {1} KB no total" -f $docsQtde, [int]($docsUsados / 1KB))
+    }
     [IO.File]::WriteAllBytes((Join-Path $dados 'ciclo_treino.tok'), $ms.ToArray())
 
     # 2. ajuste fino -> candidato (o modelo de producao nao e alterado)

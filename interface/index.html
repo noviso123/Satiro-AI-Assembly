@@ -349,6 +349,24 @@
       linhaDoc.className = 'linha-doc';
       const nome = document.createElement('span');
       nome.textContent = d.nome + ' (' + d.trechos + ' trechos)';
+      const acoes = document.createElement('div');
+      acoes.style.display = 'flex';
+      acoes.style.gap = '6px';
+      const ler = (comando) => {
+        document.getElementById('painel-docs').open = false;
+        entrada.value = comando;
+        formulario.requestSubmit();
+      };
+      const resumir = document.createElement('button');
+      resumir.className = 'secundario';
+      resumir.textContent = 'Resumir';
+      resumir.title = 'Pede para a IA resumir este documento';
+      resumir.addEventListener('click', () => ler('Resuma o documento ' + d.nome));
+      const explicar = document.createElement('button');
+      explicar.className = 'secundario';
+      explicar.textContent = 'Explicar';
+      explicar.title = 'Mostra as passagens mais importantes deste documento';
+      explicar.addEventListener('click', () => ler('Explique o documento ' + d.nome));
       const remover = document.createElement('button');
       remover.className = 'secundario';
       remover.textContent = 'Remover';
@@ -368,7 +386,8 @@
           mostraDocumentos(dados.documentos, []);
         } catch (e) { avisoCentral('Sem conexão: ' + e.message); }
       });
-      linhaDoc.append(nome, remover);
+      acoes.append(resumir, explicar, remover);
+      linhaDoc.append(nome, acoes);
       item.appendChild(linhaDoc);
       div.appendChild(item);
     });

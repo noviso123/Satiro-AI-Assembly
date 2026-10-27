@@ -82,6 +82,8 @@ sis_falta:
 
 ; ---------- sis_inicia: confere a CPU, define nth_v e a pasta do projeto ---------------------------
 sis_inicia:
+    push rbx                           ; cpuid destrói rbx; rsi e usado no laco abaixo
+    push rsi
     sub rsp, 56
     ; leaf 1: OSXSAVE (bit 27), AVX (bit 28) e FMA (bit 12) em ECX
     mov eax, 1
@@ -122,10 +124,11 @@ sis_inicia:
     lea rdx, [sis_path]
     mov r8d, 1024
     call [__imp_GetModuleFileNameA]
+    mov eax, eax                       ; ABI: os 32 bits altos de RAX vem indefinidos
     mov [sis_len], rax
     mov r11d, 5
 .sobe:
-    mov r9, [sis_len]
+    mov r9d, [sis_len]
     lea rsi, [sis_path]
 .bs:
     test r9, r9
@@ -143,11 +146,15 @@ sis_inicia:
     jnz .sobe
 .nao:
     add rsp, 56
+    pop rsi
+    pop rbx
     ret
 .achou:
     lea rcx, [sis_path]
     call [__imp_SetCurrentDirectoryA]
     add rsp, 56
+    pop rsi
+    pop rbx
     ret
 .falta:
     call sis_falta

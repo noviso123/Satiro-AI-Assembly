@@ -25,6 +25,7 @@ extern __imp_ExitProcess
 global main
 
 section .data
+c_lim_g:    dq 0.5                   ; limite do erro relativo (x1000 = 500)
 align 8
 txt_g:   db "O clima no Brasil muda com o aquecimento do oceano e as chuvas mudam tambem."
 c_h:     dd HPASSO
@@ -361,5 +362,12 @@ main:
     lea rsi, [s_nl]
     mov ecx, 2
     call say_g
+    ; sai 1 se o erro relativo maximo passou do limite (o valida confere o exit code)
+    movsd xmm0, [maxrel]
+    comisd xmm0, [c_lim_g]
+    jbe .ok_g
+    mov ecx, 1
+    call [__imp_ExitProcess]
+.ok_g:
     xor ecx, ecx
     call [__imp_ExitProcess]

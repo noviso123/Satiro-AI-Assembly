@@ -8,8 +8,8 @@ Este arquivo lista o que não é de autoria do Satiro-IA e as condições que se
   `dados\sft_pr.tok` e `dados\pira_valid.tok`. Esses arquivos são gerados a partir dos arquivos
   originais do Pira (`pira_train.tsv`, `pira_valid.tsv`, `pira_test.tsv`), que não estão mais no
   projeto.
-- **Licença:** o código-fonte original indica licença **MIT** para o Pira (comentário em
-  `chat_core.asm`, que não é mais usado pelo chat).
+- **Licença:** o código-fonte original indica licença **MIT** para o Pira (anotado em um
+  `chat_core.asm` antigo, removido do projeto).
 - **Atribuição necessária:** a licença MIT exige que o aviso de copyright e o texto da licença
   acompanhem as cópias do software. **Falta incluir o aviso de copyright exato do projeto Pira**,
   que deve ser copiado da fonte original antes de publicar. Não o inventei.

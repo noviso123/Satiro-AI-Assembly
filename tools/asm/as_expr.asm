@@ -61,14 +61,24 @@ ex_abs_op:
     jmp .fim
 .div:
     test rdx, rdx
-    jz .indef
+    jnz .div_ok
+    cmp qword [as_pass], 2          ; na passada 2 divisao por zero e erro (antes era 0 mudo)
+    jne .indef
+    lea rsi, [as_e_divzero]
+    jmp as_fail_plain
+.div_ok:
     mov r9, rdx                     ; divisor fora de rdx (cqo o sobrescreve)
     cqo
     idiv r9
     jmp .fim
 .mod:
     test rdx, rdx
-    jz .indef
+    jnz .mod_ok
+    cmp qword [as_pass], 2
+    jne .indef
+    lea rsi, [as_e_divzero]
+    jmp as_fail_plain
+.mod_ok:
     mov r9, rdx
     cqo
     idiv r9

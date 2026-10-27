@@ -24,6 +24,7 @@ default rel
 global main
 
 extern __imp_MoveFileExA
+extern __imp_DeleteFileA
 
 section .data
 align 8
@@ -61,17 +62,20 @@ vg_dst:     resq 1
 vg_buf:     resq 1
 vg_len:     resq 1
 vg_h:       resq 1
+vg_ok:      resd 1
 v_lrt:      resd 1
 inb:        resb INMAX
 lin:        resb LMAX + 8
 msgb:       resb LMAX + 16
 resp:       resb RMAX * 64 + 16
 hist:       resb (HMAX + 16) * TB
-; estado do modelo vivo: Adam (AM, AV) e passos; gravado num unico arquivo .otim
+    ; estado do modelo vivo: Adam (AM, AV) e passos; gravado num unico arquivo .otim
 vivo_blk:   resd TNP*2
 v_passos:   resq 1
 v_b1t:      resq 1
 v_b2t:      resq 1
+v_folga:    resb 8                   ; recebe o byte excedente do le tamanho+1 do .otim
+desc:       resq 1                   ; 1 = descartando o resto de uma linha maior que INMAX
 
 section .text
 
@@ -92,7 +96,7 @@ le_linha:
     jmp .b
 .sem_lf:
     cmp qword [inn], INMAX
-    jae .tudo                        ; linha maior que o buffer: usa o que tem
+    jae .tudo                        ; linha maior que o buffer: descarta ate o LF
     cmp qword [ifim], 0
     jne .fim_entrada
     mov rcx, [gc_hin]
@@ -121,11 +125,25 @@ le_linha:
     pop rbx
     ret
 .tudo:
-    mov rcx, [inn]
-    mov rbx, rcx                     ; consumido
-    jmp .copia
+    ; linha maior que o buffer: joga fora o que veio e segue descartando ate o LF
+    ; (senao o resto da linha voltaria como varias mensagens falsas)
+    mov qword [desc], 1
+    mov qword [inn], 0
+    jmp .procura
 .achou:
     lea rbx, [rcx+1]                 ; consome o LF
+    cmp qword [desc], 0
+    je .copia
+    ; era o fim de uma linha comprida em descarte: nao emite nada
+    mov qword [desc], 0
+    mov rcx, [inn]
+    sub rcx, rbx
+    mov [inn], rcx
+    lea rsi, [inb]
+    add rsi, rbx
+    lea rdi, [inb]
+    rep movsb
+    jmp .procura
 .copia:
     lea rsi, [inb]
     test rcx, rcx
@@ -267,12 +285,24 @@ vivo_grava:
     lea r9, [gc_wrote]
     mov qword [rsp+32], 0
     call [__imp_WriteFile]
+    mov [vg_ok], eax
     mov rcx, [vg_h]
     call [__imp_CloseHandle]
+    ; so troca o arquivo bom se o temporario ficou completo; senao, apaga o tmp
+    ; e mantem o anterior (um .tmp truncado nunca vira modelo vivo)
+    cmp dword [vg_ok], 0
+    je .falha
+    mov eax, [gc_wrote]
+    cmp rax, [vg_len]
+    jne .falha
     mov rcx, [vg_tmp]
     mov rdx, [vg_dst]
     mov r8d, 1                       ; MOVEFILE_REPLACE_EXISTING
     call [__imp_MoveFileExA]
+    jmp .fim
+.falha:
+    mov rcx, [vg_tmp]
+    call [__imp_DeleteFileA]
 .fim:
     add rsp, 72
     ret
@@ -352,6 +382,7 @@ main:
     mov qword [inn], 0
     mov qword [ifim], 0
     mov qword [hlen], 0
+    mov qword [desc], 0
     lea rsi, [msg_ola]
     mov ecx, msg_ola_len
     call gc_say
@@ -381,6 +412,9 @@ main:
     lea rsi, [hist]
     mov rax, [hlen]
     sub rax, TT
+    jae .orig_ok
+    xor eax, eax                     ; hlen < TT (so com HMAX pequeno): origem e 0
+.orig_ok:
     imul rax, rax, TB
     add rsi, rax
     lea rdi, [hist]

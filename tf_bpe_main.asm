@@ -47,6 +47,8 @@ msg_erri:    db "erro: texto ausente ou vazio", 13, 10
 msg_erri_len equ $ - msg_erri
 msg_erro:    db "erro: SAIDA ja existe ou nao pode ser criada", 13, 10
 msg_erro_len equ $ - msg_erro
+msg_erro_g:  db "erro: gravacao incompleta (disco cheio?)", 13, 10
+msg_erro_g_len equ $ - msg_erro_g
 
 section .bss
 alignb 16
@@ -62,6 +64,7 @@ pa:         resw NV                  ; par de cada token
 pb:         resw NV
 first:      resb NV                  ; primeiro e ultimo byte de cada token
 last:       resb NV
+tlen:       resb NV                  ; bytes de texto de cada token (fusoes param em 63)
 okr:        resb NV                  ; 1 = pode ser o token da direita
 okl:        resb NV                  ; 1 = pode ser o token da esquerda
 alignb 16
@@ -85,6 +88,8 @@ say:
     ret
 
 print_u:
+    push rsi                         ; rsi e rdi sao preservados pela convencao x64
+    push rdi
     sub rsp, 88
     lea rdi, [numbuf+20]
     mov rcx, 10
@@ -102,6 +107,8 @@ print_u:
     mov rsi, rdi
     call say
     add rsp, 88
+    pop rdi
+    pop rsi
     ret
 
 ; marca: ecx = token -> okl/okr pelas regras de fronteira
@@ -181,6 +188,8 @@ main:
     mov [rax+rcx], cl
     lea rax, [last]
     mov [rax+rcx], cl
+    lea rax, [tlen]
+    mov byte [rax+rcx], 1
     call marca
     inc ecx
     cmp ecx, 256
@@ -227,13 +236,24 @@ main:
 .lm:
     cmp rcx, r14
     jae .max_ok
-    mov eax, [r13+rcx*4]
-    mov edx, [rdi+rax*4]
-    mov dword [rdi+rax*4], 0
-    cmp edx, r11d
+    mov r8d, [r13+rcx*4]             ; par a*NV+b
+    mov r12d, [rdi+r8*4]             ; contagem
+    mov dword [rdi+r8*4], 0          ; zera a tabela no caminho
+    cmp r12d, r11d
     jbe .lm_n
-    mov r11d, edx
-    mov ebx, eax
+    ; a fusao nao pode passar de 63 bytes: o pipeline recusa tokens maiores
+    mov rax, r8
+    xor edx, edx
+    mov r9d, NV
+    div r9                           ; rax = a, rdx = b
+    lea r9, [tlen]
+    movzx r10d, byte [r9+rax]
+    movzx eax, byte [r9+rdx]
+    add eax, r10d
+    cmp eax, 63
+    ja .lm_n
+    mov r11d, r12d                   ; novo melhor
+    mov ebx, r8d
 .lm_n:
     inc rcx
     jmp .lm
@@ -252,6 +272,12 @@ main:
     mov [rax+rcx*2], r8w
     lea rax, [pb]
     mov [rax+rcx*2], r9w
+    ; comprimento do token novo (a escolha do par ja garantiu <= 63)
+    lea rax, [tlen]
+    movzx edx, byte [rax+r8]
+    movzx r10d, byte [rax+r9]
+    add edx, r10d
+    mov [rax+rcx], dl
     lea rax, [first]
     mov dl, [rax+r8]
     mov [rax+rcx], dl
@@ -315,6 +341,8 @@ main:
     lea r9, [wrote]
     mov qword [rsp+32], 0
     call [__imp_WriteFile]
+    cmp dword [wrote], 8
+    jne .erro_g
     ; pares intercalados: a, b de cada token 256..cur-1
     lea rsi, [pa]
     lea rdi, [rbuf]
@@ -335,9 +363,13 @@ main:
     lea rdx, [rbuf]
     mov r8, rdi
     sub r8, rdx
+    mov [rsp+56], r8
     lea r9, [wrote]
     mov qword [rsp+32], 0
     call [__imp_WriteFile]
+    mov eax, [wrote]
+    cmp rax, [rsp+56]
+    jne .erro_g
     mov rcx, [hfile]
     call [__imp_CloseHandle]
     lea rsi, [msg_tok]
@@ -375,6 +407,12 @@ main:
 .erro_o:
     lea rsi, [msg_erro]
     mov ecx, msg_erro_len
+    call say
+    mov ecx, 1
+    call [__imp_ExitProcess]
+.erro_g:
+    lea rsi, [msg_erro_g]
+    mov ecx, msg_erro_g_len
     call say
     mov ecx, 1
     call [__imp_ExitProcess]

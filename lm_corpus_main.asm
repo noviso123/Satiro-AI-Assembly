@@ -124,6 +124,8 @@ say_c:
 
 ; ---------- print_u_c: rax -> stdout ----------------------------------------
 print_u_c:
+    push rsi                         ; rsi e rdi sao preservados pela convencao x64
+    push rdi
     sub rsp, 88
     lea rdi, [numbuf_c+20]
     mov rcx, 10
@@ -141,6 +143,8 @@ print_u_c:
     mov rsi, rdi
     call say_c
     add rsp, 88
+    pop rdi
+    pop rsi
     ret
 
 ; ---------- grava_atomico: rcx = temporario, rdx = destino, r8 = dados, r9 = tamanho ----

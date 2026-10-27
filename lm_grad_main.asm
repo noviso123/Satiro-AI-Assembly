@@ -1,5 +1,80 @@
 default rel
-%include "chat_core.asm"
+; I/O e carga de texto (o antigo chat_core.asm nao existe mais; bloco autocontido)
+%ifndef TEXTO_LM
+%define TEXTO_LM  "dados/pira_valid.tsv"
+%endif
+%define TXTMAX_LM 16777216
+
+extern __imp_GetStdHandle
+extern __imp_WriteFile
+extern __imp_CreateFileA
+extern __imp_ReadFile
+extern __imp_CloseHandle
+extern __imp_ExitProcess
+
+global main
+
+section .data
+align 8
+msg_crlf:    db 13, 10
+msg_semtexto_lm: db "erro: texto de avaliacao ausente ou curto demais (opcao -DTEXTO_LM=arquivo na montagem)", 13, 10
+msg_semtexto_lm_len equ $ - msg_semtexto_lm
+c_limg:      dd 1.0e-3               ; limite do erro (x1e9 = 1000000)
+
+section .bss
+alignb 8
+hout:       resq 1
+wrote_lm:   resd 1
+hfile_lm:   resq 1
+txt:        resb TXTMAX_LM
+txtn:       resq 1
+
+section .text
+
+; ---------- out_bytes: rsi = bytes, rcx = quantidade -> stdout --------------------------
+out_bytes:
+    sub rsp, 56
+    mov r8, rcx
+    mov rdx, rsi
+    mov rcx, [hout]
+    lea r9, [wrote_lm]
+    mov qword [rsp+32], 0
+    call [__imp_WriteFile]
+    add rsp, 56
+    ret
+
+; ---------- load_all: carrega o texto (TEXTO_LM) em txt/txtn ----------------------------
+load_all:
+    sub rsp, 56
+    lea rcx, [path_txt_l]
+    mov edx, 0x80000000
+    mov r8d, 1
+    xor r9d, r9d
+    mov qword [rsp+32], 3
+    mov qword [rsp+40], 0x80
+    mov qword [rsp+48], 0
+    call [__imp_CreateFileA]
+    cmp rax, -1
+    je .fim
+    mov [hfile_lm], rax
+    mov rcx, rax
+    lea rdx, [txt]
+    mov r8d, TXTMAX_LM
+    lea r9, [wrote_lm]
+    mov qword [rsp+32], 0
+    call [__imp_ReadFile]
+    mov rcx, [hfile_lm]
+    call [__imp_CloseHandle]
+    mov eax, [wrote_lm]
+    mov [txtn], rax
+.fim:
+    add rsp, 56
+    ret
+
+section .data
+align 8
+path_txt_l:  db TEXTO_LM, 0
+
 %include "lm_core.asm"
 
 ; ============ TESTE DE GRADIENTE DO MODELO DE LINGUAGEM ============
@@ -37,6 +112,8 @@ section .text
 
 ; ---------- print_u: rax -> stdout ----------------------------------------
 print_u:
+    push rsi                         ; rsi e rdi sao preservados pela convencao x64
+    push rdi
     sub rsp, 40
     lea rdi, [numbuf+20]
     mov rcx, 10
@@ -54,6 +131,8 @@ print_u:
     mov rsi, rdi
     call out_bytes
     add rsp, 40
+    pop rdi
+    pop rsi
     ret
 
 ; ---------- ln_fn: xmm0 = ln(xmm0) por Newton sobre exp -------------------
@@ -94,14 +173,21 @@ main:
     call [__imp_GetStdHandle]
     mov [hout], rax
 
-    mov qword [nfiles], 3
     call load_all
     call init_params_lm
 
     movss xmm0, [c_tlr2]
     movss [c_lr_lm], xmm0
 
-    ; amostra: posicao 5000 do texto
+    ; amostra: posicao 5000 do texto (precisa de texto suficiente)
+    cmp qword [txtn], 5001
+    jae .texto_ok
+    lea rsi, [msg_semtexto_lm]
+    mov rcx, msg_semtexto_lm_len
+    call out_bytes
+    mov ecx, 1
+    call [__imp_ExitProcess]
+.texto_ok:
     mov rax, 5000
     lea rbx, [txt]
     mov rcx, rax
@@ -232,5 +318,12 @@ main:
     mov rcx, 2
     call out_bytes
 
+    ; sai 1 se o erro passou do limite (o valida_tudo confere o exit code)
+    movss xmm0, [maxerr2]
+    comiss xmm0, [c_limg]
+    jbe .ok_lg
+    mov ecx, 1
+    call [__imp_ExitProcess]
+.ok_lg:
     xor ecx, ecx
     call [__imp_ExitProcess]

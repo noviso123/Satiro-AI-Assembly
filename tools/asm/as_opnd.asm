@@ -29,6 +29,7 @@ as_e_memscl:    db "escala deve ser 1, 2, 4 ou 8", 0
 as_e_memneg:    db "registrador subtraido em memoria", 0
 as_e_memsym:    db "dois simbolos no mesmo operando de memoria", 0
 as_e_memdup:    db "registrador de base ou indice repetido", 0
+as_e_memrsp:    db "rsp nao pode ser indice de memoria (o hardware o ignora no SIB)", 0
 as_szn:         db "byte", 0, 1, "word", 0, 2, "dword", 0, 4, "qword", 0, 8, "oword", 0, 16, "yword", 0, 32, 0
 
 section .text
@@ -474,9 +475,11 @@ section .text
 as_mem_reg:
     cmp qword [mp_base], AS_NOREG
     jne .indice
-    mov [mp_base], rax
+    mov [mp_base], rax              ; rsp como base e valido (SIB trata bem)
     ret
 .indice:
+    cmp eax, 4                      ; rsp como indice: o SIB o interpreta como "sem indice"
+    je .rsp
     cmp qword [mp_index], AS_NOREG
     jne .dup
     mov [mp_index], rax
@@ -485,13 +488,21 @@ as_mem_reg:
 .dup:
     lea rsi, [as_e_memdup]
     jmp as_fail_plain
+.rsp:
+    lea rsi, [as_e_memrsp]
+    jmp as_fail_plain
 
 ; as_mem_idx: eax = indice (escala ja em mp_scale)
 as_mem_idx:
+    cmp eax, 4                      ; rsp como indice: o SIB o interpreta como "sem indice"
+    je .rsp
     cmp qword [mp_index], AS_NOREG
     jne .dup
     mov [mp_index], rax
     ret
 .dup:
     lea rsi, [as_e_memdup]
+    jmp as_fail_plain
+.rsp:
+    lea rsi, [as_e_memrsp]
     jmp as_fail_plain

@@ -194,6 +194,8 @@ say:
     add rsp, 56
     ret
 print_u:
+    push rsi                         ; rsi e rdi sao preservados pela convencao x64
+    push rdi
     sub rsp, 88
     lea rdi, [numbuf+20]
     mov rcx, 10
@@ -211,6 +213,8 @@ print_u:
     mov rsi, rdi
     call say
     add rsp, 88
+    pop rdi
+    pop rsi
     ret
 
 ; grava_atomico: rcx = temporario, rdx = destino, r8 = dados, r9 = tamanho
@@ -265,7 +269,8 @@ open_read:
     ret
 
 ; read_exact: rcx = caminho, rdx = destino, r8 = tamanho -> eax = 1 se o arquivo tem
-; exatamente esse tamanho (le tamanho+1 para detectar arquivo maior)
+; exatamente esse tamanho (pede tamanho+1 ao ReadFile: arquivo maior vem com wrote > len
+; e e recusado; os destinos sempre tem folga de ao menos 1 byte depois de si)
 read_exact:
     sub rsp, 56
     mov [re_dst], rdx
@@ -277,6 +282,7 @@ read_exact:
     mov rcx, rax
     mov rdx, [re_dst]
     mov r8, [re_len]
+    inc r8
     lea r9, [wrote]
     mov qword [rsp+32], 0
     call [__imp_ReadFile]
@@ -709,6 +715,13 @@ relatorio:
 main:
     sub rsp, 88
     call sis_inicia                  ; CPU, threads e pasta do projeto
+    ; respeita o contrato "SEQLOTE multiplo de NTH": nunca mais que NTH threads de trabalho
+    mov eax, [nth_v]
+    cmp eax, NTH
+    jbe .nth_ok
+    mov eax, NTH
+.nth_ok:
+    mov [nth_v], eax
     call aloca_twk
     lea r15, [TCTX]                 ; bloco de contexto da thread principal
     sub rsp, 8

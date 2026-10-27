@@ -18,13 +18,14 @@ function Palavras([string]$s) { @() }
 . (Join-Path $pastaInterface 'documentos.ps1')
 
 try {
+    if ($Id -notmatch '^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$') { throw 'identificador invalido' }
     Diz 'processando'
     $texto = Extrai-Texto $Arquivo $Nome
     if (-not $texto -or $texto.Trim().Length -lt 20) { throw 'nao consegui extrair texto deste arquivo (PDF escaneado precisa de OCR)' }
     [IO.File]::WriteAllText((Join-Path $DOC_DIR ($Id + '.txt')), $texto, $UTF8SemBom)
-    $indice = @(Le-Indice) + @([pscustomobject]@{ id = $Id; nome = $Nome })
-    Grava-Indice $indice
+    Adiciona-No-Indice $Id $Nome
     Diz 'ok'
+    Remove-Item (Join-Path $root "dados\uploads\$Id.nome") -Force -ErrorAction SilentlyContinue
 }
 catch {
     Diz ('erro: ' + $_.Exception.Message)

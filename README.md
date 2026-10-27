@@ -31,6 +31,7 @@ montador e linker próprios. Não usa Python, PyTorch, NASM nem compilador C.
 | `dados\conversas_basicas.txt` | conversas básicas (cumprimentos, identidade, educação) |
 | `interface\` | interface visual (servidor PowerShell + página HTML) |
 | `tf_*.asm` | código-fonte do transformer, treino, chat e avaliação |
+| `lm_*.asm` | implementação antiga (MLP por bytes), mantida como referência e usada pelo valida_tudo |
 | `tools\asm\`, `tools\pelink*` | código-fonte do montador e do linker |
 | `LEIAME_LLM.md` | referência técnica com todas as opções de compilação |
 | `LICENSE` | GNU AGPL-3.0 (uso livre) |
@@ -41,15 +42,21 @@ montador e linker próprios. Não usa Python, PyTorch, NASM nem compilador C.
 
 ## Instalação
 
-1. Baixe ou clone o repositório numa pasta, por exemplo `C:\Satiro-IA`.
+1. Baixe ou clone o repositório numa pasta, por exemplo `C:\Satiro-IA`. O montador
+   (`build\asm.exe`) e o linker (`build\pelink.exe`) acompanham o repositório; os demais
+   executáveis e **os modelos treinados não** (ver [Modelos](#modelos)).
 2. Abra um terminal (PowerShell) **na pasta do projeto**.
-3. Confira que o chat abre (ele é o primeiro teste completo):
+3. Se você tiver os modelos em `dados\` (veja [Modelos](#modelos)), confira que o chat abre
+   (ele é o primeiro teste completo):
 
 ```powershell
 "/sair" | .\build\chat_llm.exe
 ```
 
 Deve aparecer: `Satiro-IA (transformer em assembly). Digite /sair para encerrar.`
+
+Sem os modelos, monte e valide o que dá com `.\valida_tudo.bat` (os testes numéricos não
+dependem de modelos; o chat e o avaliador sim).
 
 Os programas procuram os dados a partir da **pasta do projeto**. Eles mudam de pasta sozinhos
 ao iniciar, então também funcionam se chamados de outro lugar.
@@ -92,6 +99,9 @@ Opções de amostragem (valem para o chat e para o gerador):
 | `-s` / `semente` | semente (0 = aleatória; mesma semente = mesma resposta) | 0 | |
 | `mostrar_modelo` | mostra a resposta do modelo quando ele "não sabe" | 0 | 0 ou 1 |
 
+Os padrões desta tabela são os de `dados\config_chat.json` (usados pela interface). Pela linha de
+comando, os padrões são os da tabela anterior (`-r` 1 desligado, `-n` 400).
+
 Na interface, o painel **Configurações da IA** aplica os valores e reinicia o chat. Os valores ficam em
 `dados\config_chat.json`. Valores fora da faixa são recusados.
 
@@ -99,7 +109,7 @@ O contexto só limita quando a conversa ocupa mais tokens do que ele. Para pergu
 
 ### Documentos anexados (PDF, Word, TXT, MD, CSV)
 
-Na interface, o botão **Anexar** envia um arquivo (até 15 MB). O servidor extrai o texto, divide em
+Na interface, o botão **Anexar** envia um arquivo (até 300 MB, enviado em partes). O servidor extrai o texto, divide em
 trechos e passa a responder com base nele, citando o nome do arquivo.
 
 - **Suportados:** `.pdf` (com texto embutido), `.docx`, `.txt`, `.md`, `.csv`.
@@ -135,11 +145,13 @@ Depois abra **http://localhost:8765** no navegador. Para encerrar, aperte **Ctrl
 PowerShell.
 
 A interface responde nesta ordem:
-1. **Regras básicas:** cumprimentos, identidade, agradecimento e despedida (respostas fixas).
-2. **Perguntas conhecidas:** as do treino (`dados\sft_pr.txt`) e as que você ensinou
+1. **Correção sua** para a mesma pergunta (sempre a mais recente).
+2. **Regras básicas:** cumprimentos, identidade, agradecimento e despedida (respostas fixas).
+3. **Documentos anexados:** trechos com termos em comum com a pergunta.
+4. **Perguntas conhecidas:** as do treino (`dados\sft_pr.txt`) e as que você ensinou
    (`dados\ensino_usuario.txt`). Pergunta igual, ou parecida (pelo menos 2 palavras em comum e 50%
    de semelhança), recebe a resposta cadastrada.
-3. **Não sabe:** para o resto, a interface diz que não sabe responder e convida a ensinar. A
+5. **Não sabe:** para o resto, a interface diz que não sabe responder e convida a ensinar. A
    resposta gerada pelo modelo não é mostrada, porque não é confiável.
 
 **Corrigir:** cada resposta da IA tem o botão **Corrigir**. Escreva a resposta certa e clique em
@@ -147,9 +159,9 @@ A interface responde nesta ordem:
 pergunta, mesmo com outras palavras parecidas, passa a receber a sua resposta. Para apagar tudo que
 você ensinou, apague esse arquivo e reinicie o servidor.
 
-**O modelo não muda com a correção.** Ela vale pela busca, não pelos pesos do modelo. Para
-incorporar as correções aos pesos, é preciso um ajuste fino com esse arquivo, que ainda não está
-automatizado.
+**O modelo não muda com a correção.** Ela vale pela busca, não pelos pesos do modelo. A
+incorporação aos pesos acontece pelo ciclo automático descrito abaixo, quando você acumula
+correções suficientes.
 
 ### 3. Gerar texto a partir de um início
 
@@ -269,7 +281,7 @@ para `dados\modelo_vivo_antigo.*` antes do ajuste, porque não vale para o model
 Os programas são montados por `build\asm.exe` e ligados por `build\pelink.exe`. Exemplo para o chat:
 
 ```bat
-build\asm.exe tf_chat_main.asm build\chat_llm.obj -DTOK16 -DTV=4096 -DTT=256 -DTD=128 -DTH=8 -DTF=512 -DTL=4 -DVOCAB="dados/vocab_bpe.bin" -DMODELO="dados/modelo_chat_llm.bin"
+build\asm.exe tf_chat_main.asm build\chat_llm.obj -DTOK16 -DTV=4096 -DTT=256 -DTD=128 -DTH=8 -DTF=512 -DTL=4 -DVOCAB="dados/vocab_bpe.bin" -DMODELO="dados/modelo_chat4.bin"
 build\pelink.exe build\chat_llm.obj build\chat_llm.exe
 ```
 
@@ -280,17 +292,30 @@ Todas as opções de compilação estão em `LEIAME_LLM.md`.
 
 ## Modelos
 
-Os pesos treinados **não estão no repositório** (ficam em `dados\modelo_*`, ignorados pelo Git).
-Para usar o chat sem treinar, é preciso ter `dados\modelo_chat*.bin` e `dados\vocab_bpe.bin`.
+Os pesos treinados **não estão no repositório** (ficam em `dados\modelo_*`, ignorados pelo Git),
+e o mesmo vale para os dados de ajuste fino derivados do Pira (`dados\sft_pr.*`,
+`dados\pira_valid.tok`) e pelo corpus de pré-treino. Para usar o chat sem treinar, é preciso ter
+`dados\modelo_chat*.bin` e `dados\vocab_bpe.bin` (o vocabulário este sim vem no repositório).
 Se você recebeu o projeto sem os modelos, precisa treinar (ver acima).
 
 ---
 
 ## Testes e validação
 
-- **Gradiente:** `tests\tf_dir_check.asm` confere o backward do transformer por derivada direcional.
+- **Suíte completa:** `valida_tudo.bat` monta tudo (produção, pipeline lm, testes, ferramentas de
+  dados), roda os testes numéricos e os smoke de chat/geração; sai com exit 0 só se tudo passar.
+- **Gradiente (derivada direcional):** `tests\tf_dir_check.asm` confere o backward do transformer
+  região por região de parâmetros.
+- **Gradiente (parâmetro a parâmetro):** `tests\tf_grad_check.asm` compara com diferenças finitas
+  (lento: um forward por parâmetro testado).
 - **Multiplicação de matrizes:** `tests\tf_mm_check.asm`.
-- **Codificador do montador:** `tests\as_enc_check.ps1` compara com o NASM (apenas se o NASM estiver instalado).
+- **Lote com threads:** `tests\batch_check.asm` (o lote paralelo tem que bater com a soma sequencial).
+- **Regressão do codificador:** `tests\enc_regressao.asm` (as formas de encoding usadas pelo projeto).
+- **Codificador do montador:** `tests\as_enc_check.ps1` compara com o NASM (requer o NASM instalado
+  em `C:\Program Files\NASM`).
+
+Todos os testes em `tests\*.asm` são montados com `build\asm.exe` e ligados com `build\pelink.exe`,
+como os programas principais.
 
 ---
 
@@ -306,7 +331,7 @@ Se você recebeu o projeto sem os modelos, precisa treinar (ver acima).
 - **Hardware:** exige AVX2 e FMA. Não há versão para CPUs sem essas instruções.
 - **Aprendizado contínuo:** aprende com tudo o que é digitado no chat, inclusive respostas do próprio
   modelo. Sem filtro, o modelo pode reforçar erros.
-- **Testes:** não há suíte automatizada. A validação é manual, com os testes acima.
+- **Testes:** a suíte automatizada é o `valida_tudo.bat` (monta tudo e roda os testes numéricos).
 
 ---
 

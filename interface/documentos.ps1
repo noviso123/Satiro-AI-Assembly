@@ -139,6 +139,28 @@ function Grava-Indice($lista) {
     [IO.File]::WriteAllText($DOC_INDICE, (ConvertTo-Json -InputObject $arr), $UTF8SemBom)
 }
 
+# Acrescenta um documento ao indice com exclusao mutua entre processos: uploads grandes
+# terminam em filhos separados, e quem grava por ultimo nao pode apagar a entrada do outro
+# (por isso re-le o indice DENTRO do lock antes de gravar).
+function Adiciona-No-Indice([string]$id, [string]$nome) {
+    $lock = Join-Path $DOC_DIR 'indice.lock'
+    $fluxo = $null
+    try {
+        for ($i = 0; $i -lt 100 -and -not $fluxo; $i++) {
+            try { $fluxo = [IO.File]::Open($lock, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) } catch { Start-Sleep -Milliseconds 100 }
+        }
+        if (-not $fluxo) { throw 'indice de documentos ocupado' }
+        $indice = @(Le-Indice)
+        if (@($indice | Where-Object { $_.id -eq $id }).Count -eq 0) {
+            $indice = @($indice) + @([pscustomobject]@{ id = $id; nome = $nome })
+        }
+        Grava-Indice $indice
+    }
+    finally {
+        if ($fluxo) { $fluxo.Close() }
+    }
+}
+
 function Carrega-Documentos {
     $script:sentencas.Clear()
     $script:documentos.Clear()
@@ -161,8 +183,7 @@ function Adiciona-Documento([string]$nome, [byte[]]$bytes) {
     finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
     if (-not $texto -or $texto.Trim().Length -lt 20) { throw 'nao consegui extrair texto deste arquivo (PDF escaneado precisa de OCR)' }
     [IO.File]::WriteAllText((Join-Path $DOC_DIR ($id + '.txt')), $texto, $UTF8SemBom)
-    $indice = @(Le-Indice) + @([pscustomobject]@{ id = $id; nome = $nome })
-    Grava-Indice $indice
+    Adiciona-No-Indice $id $nome
     Carrega-Documentos
     return @($script:documentos | Where-Object { $_.id -eq $id })[0]
 }

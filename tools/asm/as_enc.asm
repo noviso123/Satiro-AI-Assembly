@@ -52,6 +52,9 @@ as_e_nimmsym:   db "imediato simbolico ainda nao suportado", 0
 as_e_nform:     db "combinacao de operandos nao suportada", 0
 as_e_nmemsym:   db "deslocamento simbolico com base nao suportado", 0
 as_e_nrel:      db "salto para simbolo externo nao suportado", 0
+err_op_max:     db "instrucao com operandos demais (maximo 4)", 0
+err_imm_grande: db "imediato nao cabe na instrucao (o tamanho codifica imediato menor)", 0
+err_push_pop:   db "push/pop exige registrador de 64 bits ou memoria de 8 bytes", 0
 
 ; tabela de mnemonicos: nome ZT, classe, parametro
 as_mntab1:
@@ -275,6 +278,8 @@ as_insn:
     call as_peek
     test al, al
     jz .ops_fim
+    cmp qword [op_n], AS_OP_MAX
+    jae .ops_muitos
     call as_opnd
     inc qword [op_n]
     call as_peek
@@ -282,6 +287,9 @@ as_insn:
     jne .ops_fim
     inc qword [as_lp]
     jmp .ops
+.ops_muitos:
+    lea rsi, [err_op_max]
+    call as_fail_plain
 .ops_fim:
     mov rax, [op_n]
     mov [ib_nops], rax
@@ -1023,6 +1031,8 @@ enc_alu:
     call ib_fim
     ret
 .ri_acc:
+    mov rax, [ib_tmp]
+    call imm_faixa
     mov rax, [ib_base]
     add rax, 5
     call ib_put
@@ -1056,6 +1066,8 @@ enc_alu:
     call ib_fim
     ret
 .ri_81:
+    mov rax, [ib_tmp]
+    call imm_faixa
     mov rax, 0x81
     call ib_put
     mov rax, [ib_tmp+8]
@@ -1107,6 +1119,8 @@ enc_alu:
     call ib_fim
     ret
 .mi81:
+    mov rax, [ib_tmp]
+    call imm_faixa
     mov rax, 0x81
     call ib_put
     call ib_modrm
@@ -1130,6 +1144,45 @@ enc_alu:
     ret
 .sym:
     lea rsi, [as_e_nimmsym]
+    jmp as_fail_plain
+
+; imm_faixa: rax = imediato; falha se nao couber no campo da forma usada.
+; tamanho 8 codifica imm32 e tamanho 2 codifica imm16: o campo e sem sinal, mas um
+; negativo em complemento e aceito quando os bits altos sao todos o sinal replicado.
+imm_faixa:
+    cmp qword [ib_size], 8
+    je .o8
+    cmp qword [ib_size], 2
+    je .o2
+    ret
+.o8:
+    test rax, rax
+    js .o8neg
+    mov rcx, 0x100000000
+    cmp rax, rcx
+    jb .fim
+    jmp .estoura
+.o8neg:
+    mov rcx, -0x80000000
+    cmp rax, rcx
+    jge .fim
+    jmp .estoura
+.o2:
+    test rax, rax
+    js .o2neg
+    mov rcx, 0x10000
+    cmp rax, rcx
+    jb .fim
+    jmp .estoura
+.o2neg:
+    mov rcx, -0x8000
+    cmp rax, rcx
+    jge .fim
+    jmp .estoura
+.fim:
+    ret
+.estoura:
+    lea rsi, [err_imm_grande]
     jmp as_fail_plain
 
 ; ri_modrm: rax = extensao /n -> ModRM (mod 11, rm = registrador de destino op0)
@@ -1332,6 +1385,8 @@ enc_mov:
     mov [ib_tmp], rax
     cmp qword [ib_size], 1
     je .mi8
+    mov rax, [ib_tmp]
+    call imm_faixa
     mov rax, 0xC7
     call ib_put
     call ib_modrm
@@ -1424,6 +1479,10 @@ enc_push:
     call ib_inicio
     cmp qword [op_t], 3
     je .mem
+    cmp qword [op_t], 1
+    jne .negado
+    cmp qword [op_rsz], 8
+    jne .negado                     ; push de 16 bits precisaria de 66: fora de escopo
     lea rdx, [op_reg]
     mov rax, [rdx]
     call ib_rex_b
@@ -1436,6 +1495,12 @@ enc_push:
     call ib_fim
     ret
 .mem:
+    cmp qword [op_msz], 8
+    je .mem_ok
+    cmp qword [op_msz], 0           ; tamanho nao declarado: hardware empurra qword
+    je .mem_ok
+    jmp .negado
+.mem_ok:
     mov qword [ib_rmi], 0
     mov qword [ib_regf], 6
     mov rax, 0xFF
@@ -1443,11 +1508,18 @@ enc_push:
     call ib_modrm
     call ib_fim
     ret
+.negado:
+    lea rsi, [err_push_pop]
+    jmp as_fail_plain
 
 enc_pop:
     call ib_inicio
     cmp qword [op_t], 3
     je .mem
+    cmp qword [op_t], 1
+    jne .negado
+    cmp qword [op_rsz], 8
+    jne .negado
     lea rdx, [op_reg]
     mov rax, [rdx]
     call ib_rex_b
@@ -1460,6 +1532,12 @@ enc_pop:
     call ib_fim
     ret
 .mem:
+    cmp qword [op_msz], 8
+    je .mem_ok
+    cmp qword [op_msz], 0
+    je .mem_ok
+    jmp .negado
+.mem_ok:
     mov qword [ib_rmi], 0
     mov qword [ib_regf], 0
     mov rax, 0x8F
@@ -1467,6 +1545,9 @@ enc_pop:
     call ib_modrm
     call ib_fim
     ret
+.negado:
+    lea rsi, [err_push_pop]
+    jmp as_fail_plain
 
 ; ---------- enc_call / enc_jmp: rel32 (E8/E9) ou [memoria] (FF /2, FF /4) -----------------------
 enc_call:
@@ -1911,6 +1992,8 @@ enc_imul:
     call ib_fim
     ret
 .t69:
+    mov rax, [ib_immv]
+    call imm_faixa
     mov rax, 0x69
     call ib_put
     call ib_modrm

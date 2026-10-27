@@ -118,6 +118,8 @@ as_cond_line:
     call as_if_expr                 ; eax = condicao
     and rax, [as_pai]               ; bloco ativo = condicao e pai ativo
     mov rdx, [as_ifdep]
+    cmp rdx, AS_COND_MAX
+    jae .nao_asm                    ; pilha cheia: o pre ja avisou no mesmo caso
     lea rcx, [as_ifcur]
     mov [rcx+rdx*8], rax
     lea rcx, [as_ifpar]
@@ -263,6 +265,10 @@ as_if_expr:
     jmp .op_ok
 .eq:
     inc rsi
+    cmp byte [rsi], '='             ; aceita == (como o NASM) e =
+    jne .eq_ok
+    inc rsi
+.eq_ok:
     mov ecx, 4
     jmp .op_ok
 .ne:

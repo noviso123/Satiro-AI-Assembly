@@ -103,8 +103,9 @@ default rel
 %define TX_D_A1    (TX_D_P + TT*TT*4)
 %define TX_D_LOG   (TX_D_A1 + TT*TF*4)
 %define TX_TG      (TX_D_LOG + TT*TV*4)
-%define TX_MMT     (TX_TG + TNP*4)     ; buffer de transposicao de mm_nt (o maior B e [TV|TF][TD])
-%define TX_SIZE    (TX_MMT + (TV+TF)*TD*4 + 64)
+%define TX_MMT     (TX_TG + TNP*4)     ; buffer de transposicao de mm_nt; cobre os maiores usos:
+                                       ; [k][n] de (TD, TV|TF) e de (THD, TT) no backward
+%define TX_SIZE    (TX_MMT + (TV+TF)*TD*4 + TD*TT*4 + 64)
 
 section .bss
 alignb 32

@@ -42,6 +42,7 @@ ii:   resq 1
 jj:   resq 1
 kk:   resq 1
 maxe: resq 1                 ; double
+pior_mm: resq 1              ; maior erro dos tres kernels (x1e9)
 
 section .text
 say_t:
@@ -228,6 +229,11 @@ main:
     call mm_nn
     mov r10, 1
     call checa
+    mov rcx, [pior_mm]
+    cmp rax, rcx
+    jbe .p1
+    mov [pior_mm], rax
+.p1:
     push rax
     lea rsi, [s_nn]
     mov ecx, s_nn_len
@@ -241,6 +247,11 @@ main:
     call mm_nt
     mov r10, 2
     call checa
+    mov rcx, [pior_mm]
+    cmp rax, rcx
+    jbe .p2
+    mov [pior_mm], rax
+.p2:
     push rax
     lea rsi, [s_nt]
     mov ecx, s_nt_len
@@ -256,6 +267,11 @@ main:
     call mm_tn
     mov r10, 3
     call checa
+    mov rcx, [pior_mm]
+    cmp rax, rcx
+    jbe .p3
+    mov [pior_mm], rax
+.p3:
     push rax
     lea rsi, [s_tn]
     mov ecx, s_tn_len
@@ -265,6 +281,13 @@ main:
     lea rsi, [s_nl]
     mov ecx, 2
     call say_t
+    ; sai 1 se algum erro passou do limite (o valida_tudo confere o exit code)
+    mov rax, [pior_mm]
+    cmp rax, 50000
+    jbe .ok_mm
+    mov ecx, 1
+    call [__imp_ExitProcess]
+.ok_mm:
     xor ecx, ecx
     call [__imp_ExitProcess]
 

@@ -151,5 +151,12 @@ main:
     mov ecx, 2
     call say
 
+    ; sai 1 se o erro passou do limite (o valida_tudo confere o exit code)
+    mov rax, [errv]
+    cmp rax, 100000
+    jbe .ok_bc
+    mov ecx, 1
+    call [__imp_ExitProcess]
+.ok_bc:
     xor ecx, ecx
     call [__imp_ExitProcess]

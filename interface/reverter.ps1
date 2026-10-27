@@ -24,6 +24,12 @@ if (-not $Versao) {
 
 $origem = Join-Path $versoes $Versao
 if (-not (Test-Path (Join-Path $origem 'modelo_chat4.bin'))) { throw "versao nao encontrada: $Versao" }
+# reverter durante um ciclo e inutil: o ciclo terminaria e substituiria o modelo de volta
+$lock = Join-Path $dados 'ciclo.lock'
+if (Test-Path $lock) {
+    $idade = (Get-Date) - (Get-Item $lock).LastWriteTime
+    if ($idade.TotalHours -lt 2) { throw 'ciclo de correcoes em andamento: aguarde o fim dele antes de reverter' }
+}
 
 $agora = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $guarda = Join-Path $versoes ("antes-de-reverter-" + $agora)

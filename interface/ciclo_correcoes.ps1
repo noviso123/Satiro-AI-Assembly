@@ -36,7 +36,12 @@ function Registra([string]$msg) {
 }
 
 function Roda([string]$comando) {
-    $saida = cmd /c $comando 2>&1
+    # stderr com EAP=Stop viraria NativeCommandError no PS 5.1 (um aviso do asm abortaria
+    # o ciclo); a falha real ja e coberta pelo exit code abaixo
+    $eapAntiga = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $saida = cmd /c $comando 2>&1 }
+    finally { $ErrorActionPreference = $eapAntiga }
     if ($LASTEXITCODE -ne 0) { throw "falhou: $comando`n$($saida -join "`n")" }
     return ($saida -join "`n")
 }
@@ -58,12 +63,13 @@ function Bits-Basic([string]$resultado) {
 }
 
 # ---- inicio ----
-if (Test-Path $lock) {
-    $idade = (Get-Date) - (Get-Item $lock).LastWriteTime
-    if ($idade.TotalHours -lt 2) { Write-Output 'ciclo ja em andamento'; exit 0 }
-    Remove-Item $lock -Force
+# lock por abertura exclusiva: dois ciclos disparados quase juntos (TOCTOU) nao passam,
+# e o handle fica segurado durante o ciclo inteiro
+$fluxoLock = $null
+for ($i = 0; $i -lt 5 -and -not $fluxoLock; $i++) {
+    try { $fluxoLock = [IO.File]::Open($lock, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) } catch { Start-Sleep -Milliseconds 500 }
 }
-Set-Content $lock (Get-Date) -Encoding ascii
+if (-not $fluxoLock) { Write-Output 'ciclo ja em andamento'; exit 0 }
 
 try {
     $cfg = Get-Content (Join-Path $dados 'ciclo_config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -95,7 +101,7 @@ try {
     [IO.File]::WriteAllBytes((Join-Path $dados 'ciclo_treino.tok'), $ms.ToArray())
 
     # 2. ajuste fino -> candidato (o modelo de producao nao e alterado)
-    if (Test-Path $candidato) { Remove-Item $candidato -Force }
+    Remove-Item ($candidato + '.otim'), ($candidato + '.pos'), $candidato -Force -ErrorAction SilentlyContinue
     Roda "interface\ciclo\ajuste.bat dados\ciclo_treino.tok dados\modelo_chat4.bin dados\ciclo_candidato.bin $lr" | Out-Null
     Registra 'candidato treinado'
 
@@ -116,6 +122,9 @@ try {
         Registra 'NAO TROCADO: o candidato piorou em pelo menos um teste; modelo atual mantido'
     }
     else {
+        # monta o chat do candidato ANTES de promo-lo: se o build falhar, a producao
+        # fica intacta (o contrario violaria o contrato "nunca mexe na producao")
+        Roda "interface\ciclo\chat.bat dados\ciclo_candidato.bin build\chat_llm.exe.novo" | Out-Null
         $pasta = Join-Path $dados ("versoes\" + (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'))
         New-Item -ItemType Directory -Force $pasta | Out-Null
         Copy-Item $producao (Join-Path $pasta 'modelo_chat4.bin')
@@ -124,15 +133,15 @@ try {
             if (Test-Path $p) { Move-Item $p (Join-Path $pasta $extra) }
         }
         Copy-Item $candidato $producao -Force
-        Roda "interface\ciclo\chat.bat dados\modelo_chat4.bin build\chat_llm.exe.novo" | Out-Null
         Registra "TROCADO: modelo anterior guardado em $pasta; novo chat em build\chat_llm.exe.novo"
     }
     [IO.File]::WriteAllText((Join-Path $dados 'ciclo_estado.json'), ($estado | ConvertTo-Json), $UTF8SemBom)
-    Remove-Item $candidato -Force -ErrorAction SilentlyContinue
+    Remove-Item ($candidato + '.otim'), ($candidato + '.pos'), $candidato -Force -ErrorAction SilentlyContinue
 }
 catch {
     Registra "ERRO no ciclo, producao mantida: $($_.Exception.Message)"
 }
 finally {
+    if ($fluxoLock) { $fluxoLock.Close() }
     Remove-Item $lock -Force -ErrorAction SilentlyContinue
 }

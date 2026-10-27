@@ -151,7 +151,7 @@ as_read_file:
     call [__imp_GetFileSize]
     cmp eax, -1
     je .fecha
-    cmp rax, AS_FBUF_SIZE
+    cmp rax, AS_FBUF_SIZE-1         ; -1: sobra 1 byte para o zero final do nivel
     ja .fecha
     mov [as_tmp+8], rax
     mov rcx, [as_hfile]

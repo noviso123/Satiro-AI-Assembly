@@ -40,6 +40,10 @@ msg_erri:    db "erro: entrada ausente ou grande demais", 13, 10
 msg_erri_len equ $ - msg_erri
 msg_erro:    db "erro: SAIDA ja existe ou nao pode ser criada", 13, 10
 msg_erro_len equ $ - msg_erro
+msg_omax:    db "erro: saida maior que o buffer interno (8 MB); use uma entrada menor", 13, 10
+msg_omax_len equ $ - msg_omax
+msg_erro_g:  db "erro: gravacao incompleta (disco cheio?)", 13, 10
+msg_erro_g_len equ $ - msg_erro_g
 
 section .bss
 alignb 16
@@ -57,6 +61,7 @@ f3s:        resq 1
 f3e:        resq 1
 ibuf:       resb IMAX
 obuf:       resb OMAX
+ob_perdeu:  resd 1                   ; 1 = algum pedaco nao coube em obuf
 
 section .text
 
@@ -72,6 +77,8 @@ say:
     ret
 
 print_u:
+    push rsi                         ; rsi e rdi sao preservados pela convencao x64
+    push rdi
     sub rsp, 88
     lea rdi, [numbuf+20]
     mov rcx, 10
@@ -89,6 +96,8 @@ print_u:
     mov rsi, rdi
     call say
     add rsp, 88
+    pop rdi
+    pop rsi
     ret
 
 ; poe: rsi = bytes, rcx = quantidade -> acrescenta em obuf (sem passar de OMAX)
@@ -101,7 +110,9 @@ poe:
     add rdi, [olen]
     mov [olen], rax
     rep movsb
+    ret
 .cheio:
+    mov dword [ob_perdeu], 1
     ret
 
 ; fecha_linha: se a linha tem pergunta e resposta nao vazias, grava o par
@@ -114,6 +125,15 @@ fecha_linha:
     mov rax, [f3e]
     cmp rax, [f3s]
     jbe .nao
+    ; o par inteiro tem que caber no buffer: sai partido e pior que nada
+    mov rax, [f2e]
+    sub rax, [f2s]
+    add rax, [f3e]
+    sub rax, [f3s]
+    add rax, 9                      ; "P: " + "\nR: " + \n + \n
+    add rax, [olen]
+    cmp rax, OMAX
+    ja .nao
     lea rsi, [tag_p]
     mov ecx, 3
     call poe
@@ -212,6 +232,15 @@ main:
     call marca_campo
     inc qword [campo]
     call fecha_linha
+    ; se algo nao coube, a saida ficaria incompleta: erro em vez de sucesso mudo
+    cmp dword [ob_perdeu], 0
+    je .sem_perda
+    lea rsi, [msg_omax]
+    mov ecx, msg_omax_len
+    call say
+    mov ecx, 1
+    call [__imp_ExitProcess]
+.sem_perda:
     ; uma epoca pronta em obuf; grava EPOCAS vezes
     lea rcx, [path_out]
     mov edx, 0x40000000
@@ -225,6 +254,8 @@ main:
     je .erro_o
     mov [hfile], rax
     mov r14d, EPOCAS
+    test r14d, r14d
+    jz .ep_fim                      ; EPOCAS=0: nao entra no laco (evita underflow)
 .ep:
     mov rcx, [hfile]
     lea rdx, [obuf]
@@ -232,8 +263,12 @@ main:
     lea r9, [wrote]
     mov qword [rsp+32], 0
     call [__imp_WriteFile]
+    mov eax, [wrote]
+    cmp rax, [olen]
+    jne .erro_g
     dec r14d
     jnz .ep
+.ep_fim:
     mov rcx, [hfile]
     call [__imp_CloseHandle]
     lea rsi, [msg_ok]
@@ -260,6 +295,12 @@ main:
 .erro_o:
     lea rsi, [msg_erro]
     mov ecx, msg_erro_len
+    call say
+    mov ecx, 1
+    call [__imp_ExitProcess]
+.erro_g:
+    lea rsi, [msg_erro_g]
+    mov ecx, msg_erro_g_len
     call say
     mov ecx, 1
     call [__imp_ExitProcess]

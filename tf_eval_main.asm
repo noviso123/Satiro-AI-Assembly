@@ -30,6 +30,8 @@ msg_bpb_len  equ $ - msg_bpb
 msg_nl_e:    db 13, 10
 msg_errt:    db "erro: texto de avaliacao ausente ou curto demais", 13, 10
 msg_errt_len equ $ - msg_errt
+msg_corta:   db "aviso: texto maior que 8 MB; avaliando so os primeiros 8 MB", 13, 10
+msg_corta_len equ $ - msg_corta
 
 section .bss
 alignb 16
@@ -41,7 +43,7 @@ soma_e:     resq 1
 nats:       resq 1                   ; soma de -ln P(alvo)
 bytes_e:    resq 1                   ; bytes dos alvos
 acertos:    resq 1
-tbuf:       resb EVMAX
+tbuf:       resb EVMAX + 8
 
 section .text
 
@@ -70,10 +72,17 @@ main:
     call gc_inicia
     lea rcx, [path_t]
     lea rdx, [tbuf]
-    mov r8d, EVMAX
+    mov r8d, EVMAX+1
     call gc_le_arq
     cmp rax, -1
     je .erro_t
+    cmp rax, EVMAX
+    jbe .tam_ok
+    lea rsi, [msg_corta]
+    mov ecx, msg_corta_len
+    call gc_say
+    mov rax, EVMAX
+.tam_ok:
     xor edx, edx
     mov ecx, TB
     div rcx                          ; bytes -> tokens

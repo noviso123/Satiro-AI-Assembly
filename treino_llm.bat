@@ -5,7 +5,7 @@ rem Checkpoint a cada 4 Mi tokens (~6 min) para perder pouco se o PC desligar.
 rem A taxa cai ate 0,1 x LR ao longo da primeira passada e fica assim depois.
 rem Se o processo cair, recomeca do ultimo checkpoint em 30 s. Para parar de vez: crie o arquivo
 rem PARAR_TREINO nesta pasta e encerre build\treino_llm.exe. Log: treino_llm_log.txt
-cd /d %~dp0
+cd /d "%~dp0"
 if not exist dados\corpus.tok (
   echo [erro] dados\corpus.tok nao encontrado: sem corpus nao ha treino. Veja o README.
   exit /b 1
@@ -20,7 +20,7 @@ if exist PARAR_TREINO goto fim
 start "" /b /wait /belownormal build\treino_llm.exe >> treino_llm_log.txt 2>&1
 if exist PARAR_TREINO goto fim
 echo [treino encerrou; recomecando em 30 s] >> treino_llm_log.txt
-timeout /t 30 /nobreak >nul
+ping -n 31 127.0.0.1 >nul
 goto laco
 :fim
 echo [treino parado pelo arquivo PARAR_TREINO] >> treino_llm_log.txt

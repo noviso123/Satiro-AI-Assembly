@@ -31,6 +31,8 @@ cd_erri:     db "erro: texto ausente", 13, 10
 cd_erri_len  equ $ - cd_erri
 cd_erro:     db "erro: SAIDA ja existe ou nao pode ser criada", 13, 10
 cd_erro_len  equ $ - cd_erro
+cd_erro_g:   db "erro: gravacao incompleta (disco cheio?)", 13, 10
+cd_erro_g_len equ $ - cd_erro_g
 
 section .bss
 alignb 16
@@ -47,6 +49,8 @@ cd_tok:     resw CHK + 16
 section .text
 
 cd_print:
+    push rsi                         ; rsi e rdi sao preservados pela convencao x64
+    push rdi
     sub rsp, 88
     lea rdi, [cd_numb+20]
     mov rcx, 10
@@ -64,6 +68,8 @@ cd_print:
     mov rsi, rdi
     call gc_say
     add rsp, 88
+    pop rdi
+    pop rsi
     ret
 
 ; fronteira: rsi = texto, rcx = posicao (>= 1) -> ZF=1 (je) se um pedaco comeca em rcx
@@ -131,21 +137,33 @@ cd_bloco:
     mov rcx, [cd_hout]
     lea rdx, [cd_tok]
     lea r8, [r14*2]
+    mov [rsp+40], r8                 ; tamanho esperado (r8 e volatil na chamada)
     lea r9, [gc_wrote]
     mov qword [rsp+32], 0
     call [__imp_WriteFile]
+    mov eax, [gc_wrote]
+    cmp rax, [rsp+40]
+    jne .falha_grav                  ; disco cheio: nao fingir sucesso
     add rsp, 48
     pop r14
     pop r13
     pop rbx
     ret
+.falha_grav:
+    lea rsi, [cd_erro_g]
+    mov ecx, cd_erro_g_len
+    call gc_say
+    mov ecx, 1
+    call [__imp_ExitProcess]
 
 main:
     sub rsp, 88
     mov ecx, -11
     call [__imp_GetStdHandle]
     mov [gc_hout], rax
-    call gc_vocab
+%ifdef TOK16
+    call gc_vocab                    ; so existe (e so faz falta) no modo BPE
+%endif
     lea rcx, [cd_in]
     mov edx, 0x80000000
     mov r8d, 1

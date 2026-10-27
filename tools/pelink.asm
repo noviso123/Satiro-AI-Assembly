@@ -59,6 +59,7 @@ s_eovf:     db "pelink: relocacao fora do alcance de 32 bits", 13, 10, 0
 s_emain:    db "pelink: simbolo main nao encontrado", 13, 10, 0
 s_ebig:     db "pelink: tamanho excede o limite", 13, 10, 0
 s_eimp:     db "pelink: muitos imports", 13, 10, 0
+s_esym:    db "pelink: objeto com nome de simbolo fora da tabela de strings", 13, 10, 0
 
 section .bss
 alignb 16
@@ -385,6 +386,14 @@ sym_name:
     lea rsi, [inbuf]
     add rsi, [stroff]
     add rsi, rax
+    ; objeto malformado nao pode fazer a leitura passar do fim da entrada
+    lea rdx, [inbuf]
+    add rdx, [inlen]
+    cmp rsi, rdx
+    jb .faixa_ok
+    lea rax, [s_esym]
+    ret
+.faixa_ok:
     lea rdi, [symnbuf]
     call copy_z
     lea rsi, [symnbuf]
@@ -505,7 +514,14 @@ map_sections:
     lea rbx, [secmap]
     mov [rbx+rcx*8], rdx
     mov rbx, [tmp2]
-    mov eax, [rbx+16]
+    mov eax, [rbx+16]               ; SizeOfRawData
+    test dword [rbx+36], 0x80       ; CNT_UNINITIALIZED_DATA (.bss)
+    jz .tam_ok
+    mov edx, [rbx+8]                ; objeto do NASM guarda o tamanho em VirtualSize
+    cmp edx, eax
+    jbe .tam_ok
+    mov eax, edx
+.tam_ok:
     lea rcx, [outsz]
     mov rdx, [tmp3]
     mov [rcx+rdx*8], rax
@@ -546,19 +562,22 @@ count_imports:
     cmp rax, MAXIMP
     jae .muitos
     lea rsi, [symnbuf+6]            ; nome sem o prefixo "__imp_"
+    call strlen_z
+    inc rax                         ; + o zero final
+    add rax, [imptop]
+    cmp rax, IMPPOOL_SIZE           ; confere ANTES de copiar (a copia que cruza
+    ja .muitos                      ; o fim ja teria escrito alem do pool)
+    mov [tmp3], rax
     lea rdi, [imppool]
     add rdi, [imptop]
     mov rdx, rdi
     lea rbx, [impnamep]
     mov rax, [nimp]
     mov [rbx+rax*8], rdx
+    lea rsi, [symnbuf+6]
     call copy_z
-    mov rsi, rdx
-    call strlen_z
-    inc rax
-    add [imptop], rax
-    cmp qword [imptop], IMPPOOL_SIZE
-    ja .muitos
+    mov rax, [tmp3]
+    mov [imptop], rax
     lea rbx, [symimp]
     mov rcx, [tmp1]
     mov rax, [nimp]

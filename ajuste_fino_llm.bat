@@ -1,9 +1,9 @@
 @echo off
-rem Ajuste fino P/R da LLM BPE a partir do checkpoint atual (dados\modelo_llm.bin, so leitura).
+rem Ajuste fino P/R da LLM BPE: o chat parte de modelo_chat3; gen/eval usam modelo_llm (so leitura).
 rem Parte de dados\modelo_chat3.bin e grava dados\modelo_chat4.* (refeito a cada vez) e monta:
 rem   build\chat_llm.exe  (chat)   build\gen_llm.exe (gerador)   build\eval_llm.exe (avaliacao)
 rem Leva alguns minutos e divide a CPU com o treino longo enquanto roda.
-cd /d %~dp0
+cd /d "%~dp0"
 set CFG=-DTOK16 -DTV=4096 -DTT=256 -DTD=128 -DTH=8 -DTF=512 -DTL=4 -DVOCAB="dados/vocab_bpe.bin"
 if not exist dados\sft_pr.tok (
   build\asm.exe tf_bpe_cod_main.asm build\cod_sft.obj %CFG% -DTEXTO="dados/sft_pr.txt" -DSAIDA="dados/sft_pr.tok" || exit /b 1
@@ -27,7 +27,7 @@ build\asm.exe tf_gen_main.asm build\gen_llm.obj %CFG% -DMODELO="dados/modelo_llm
 build\pelink.exe build\gen_llm.obj build\gen_llm.exe || exit /b 1
 build\asm.exe tf_eval_main.asm build\eval_llm.obj %CFG% -DMODELO="dados/modelo_llm.bin" -DTEXTO="dados/pira_valid.tok" || exit /b 1
 build\pelink.exe build\eval_llm.obj build\eval_llm.exe || exit /b 1
-if "%1"=="so_montar" exit /b 0
+if /i "%~1"=="so_montar" exit /b 0
 build\ajuste_llm.exe || exit /b 1
 echo.
 echo Pronto. Conversar: build\chat_llm.exe -r 1.2     Avaliar a base: build\eval_llm.exe

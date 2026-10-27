@@ -152,7 +152,8 @@
   }
 
   async function postJson(caminho, corpo) {
-    const r = await fetch(caminho, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    // o header X-Satiro e a prova de que o pedido veio desta pagina (CSRF)
+    const r = await fetch(caminho, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Satiro': '1' }, body: JSON.stringify(corpo) });
     let dados;
     try { dados = await r.json(); } catch (e) { dados = { erro: 'resposta inválida do servidor (HTTP ' + r.status + ')' }; }
     if (!r.ok && !dados.erro) dados.erro = 'HTTP ' + r.status;
@@ -276,6 +277,7 @@
 
   formulario.addEventListener('submit', (ev) => {
     ev.preventDefault();
+    if (enviar.disabled) return;     // ja ha uma resposta em andamento
     const texto = entrada.value.trim();
     if (!texto) return;
     entrada.value = '';
@@ -297,7 +299,8 @@
     zona.remove();
     if (!ok) return;
     try {
-      await postJson('/api/limpar', {});
+      const dados = await postJson('/api/limpar', {});
+      if (dados.erro) { avisoCentral('Não consegui limpar: ' + dados.erro); return; }
       conversa.innerHTML = '';
       avisoCentral('Conversa limpa. Documentos e correções continuam salvos.');
     } catch (e) { avisoCentral('Não consegui limpar: ' + e.message); }
@@ -324,7 +327,10 @@
         descartar.className = 'secundario';
         descartar.textContent = 'Descartar';
         descartar.addEventListener('click', async () => {
-          await postJson('/api/upload/descartar', { id: p.id });
+          try {
+            const dados = await postJson('/api/upload/descartar', { id: p.id });
+            if (dados.erro) { avisoCentral('Não consegui descartar: ' + dados.erro); return; }
+          } catch (e) { avisoCentral('Sem conexão: ' + e.message); return; }
           carregaDocumentos();
         });
         linhaDoc.appendChild(descartar);
@@ -347,11 +353,20 @@
       remover.className = 'secundario';
       remover.textContent = 'Remover';
       remover.addEventListener('click', async () => {
-        const ok = await pedeConfirmacao(item, 'Remover "' + d.nome + '" das respostas? O texto vai para a pasta de removidos.', { botao: 'Remover' });
+        // a confirmacao fica fora de #docs: o polling reconstroi a lista a cada tick
+        // e destruiria a caixa aberta (e a promessa ficaria pendente para sempre)
+        const zona = document.createElement('div');
+        document.getElementById('painel-docs').appendChild(zona);
+        let ok = false;
+        try {
+          ok = await pedeConfirmacao(zona, 'Remover "' + d.nome + '" das respostas? O texto vai para a pasta de removidos.', { botao: 'Remover' });
+        } finally { zona.remove(); }
         if (!ok) return;
-        const dados = await postJson('/api/documento/remover', { id: d.id });
-        if (dados.erro) { avisoCentral('Não consegui remover: ' + dados.erro); return; }
-        mostraDocumentos(dados.documentos, []);
+        try {
+          const dados = await postJson('/api/documento/remover', { id: d.id });
+          if (dados.erro) { avisoCentral('Não consegui remover: ' + dados.erro); return; }
+          mostraDocumentos(dados.documentos, []);
+        } catch (e) { avisoCentral('Sem conexão: ' + e.message); }
       });
       linhaDoc.append(nome, remover);
       item.appendChild(linhaDoc);
@@ -368,13 +383,16 @@
       const ha = (dados.pendentes || []).some(p => p.estado === 'processando');
       if (ha && !acompanhando) {
         acompanhando = setInterval(async () => {
-          const r2 = await fetch('/api/documentos');
-          const d2 = await r2.json();
-          mostraDocumentos(d2.documentos, d2.pendentes);
-          if (!(d2.pendentes || []).some(p => p.estado === 'processando')) {
-            clearInterval(acompanhando); acompanhando = null;
-            avisoCentral('Um documento terminou de ser processado e já pode ser usado nas respostas.');
-          }
+          try {
+            const r2 = await fetch('/api/documentos');
+            const d2 = await r2.json();
+            if (!Array.isArray(d2.pendentes)) return;   // resposta estranha: aguarda o proximo tick
+            mostraDocumentos(d2.documentos, d2.pendentes);
+            if (!d2.pendentes.some(p => p.estado === 'processando')) {
+              clearInterval(acompanhando); acompanhando = null;
+              avisoCentral('Um documento terminou de ser processado e já pode ser usado nas respostas.');
+            }
+          } catch (e) { /* servidor fora do ar: tenta no proximo tick */ }
         }, 4000);
       }
     } catch (e) { /* servidor fora do ar: tenta de novo na proxima acao */ }

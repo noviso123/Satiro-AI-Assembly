@@ -6,6 +6,7 @@ param([string]$Casos = "tests\as_enc_casos.txt")
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 $nasm = "C:\Program Files\NASM\nasm.exe"
+if (-not (Test-Path $nasm)) { Write-Output "NASM nao encontrado em $nasm; instale-o ou ajuste o caminho"; exit 1 }
 $tmp = Join-Path $env:TEMP "asm_enc_check"
 New-Item -ItemType Directory -Force $tmp | Out-Null
 

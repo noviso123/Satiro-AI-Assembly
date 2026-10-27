@@ -67,6 +67,8 @@ say_e:
     ret
 
 print_e:                             ; rax -> stdout (decimal)
+    push rsi                         ; rsi e rdi sao preservados pela convencao x64
+    push rdi
     sub rsp, 88
     lea rdi, [numbuf_e+20]
     mov rcx, 10
@@ -84,6 +86,8 @@ print_e:                             ; rax -> stdout (decimal)
     mov rsi, rdi
     call say_e
     add rsp, 88
+    pop rdi
+    pop rsi
     ret
 
 ; le_arquivo: rcx = caminho, rdx = destino, r8 = maximo -> rax = bytes lidos ou -1

@@ -74,6 +74,7 @@ r_ini:   resq 1
 r_fim:   resq 1
 lplus:   resq 1
 ga_s:    resq 1
+pior_g:  resq 1                  ; maior erro relativo (x1000) entre as regioes
 lnx:     resq 1
 seed_d:  resq 1
 
@@ -231,8 +232,11 @@ main:
     cmp rcx, TNP
     jae .sg_ok
     mov rax, [seed_d]
-    imul rax, rax, 6364136223846793005
-    add rax, 1442695040888963407
+    ; constantes de 64 bits vao por registrador: imul/add de 3 operandos so codificam imm32
+    mov rdx, 6364136223846793005
+    imul rax, rdx
+    mov rdx, 1442695040888963407
+    add rax, rdx
     mov [seed_d], rax
     shr rax, 63
     lea rdx, [SINAL]
@@ -322,6 +326,11 @@ main:
     divsd xmm0, xmm1
     mulsd xmm0, [c_1e3]
     cvttsd2si rax, xmm0
+    mov rcx, [pior_g]
+    cmp rax, rcx
+    jbe .nao_pior
+    mov [pior_g], rax
+.nao_pior:
     push rax
     sub rsp, 8
     lea rsi, [s_rel]
@@ -345,5 +354,12 @@ main:
     inc qword [reg_i]
     jmp .reg
 .fim:
+    ; sai 1 se algum erro relativo passou do limite (o valida_tudo confere o exit code)
+    mov rax, [pior_g]
+    cmp rax, 800
+    jbe .ok_dc
+    mov ecx, 1
+    call [__imp_ExitProcess]
+.ok_dc:
     xor ecx, ecx
     call [__imp_ExitProcess]

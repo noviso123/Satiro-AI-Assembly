@@ -15,6 +15,9 @@
 
 $ErrorActionPreference = 'Stop'
 $root = (Get-Item $PSScriptRoot).Parent.FullName
+# os programas de ciclo (interface\ciclo\*.bat) usam caminhos relativos a raiz:
+# o servidor passa a raiz a ser a pasta atual, venha de onde vier o inicio.
+Set-Location $root
 $exe = Join-Path $root 'build\chat_llm.exe'
 $pagina = Join-Path $PSScriptRoot 'index.html'
 $arquivoPares = Join-Path $root 'dados\sft_pr.txt'
@@ -124,7 +127,7 @@ $TEXTO_NAO_SEI = 'Ainda nao sei responder isso com seguranca. Se voce souber a r
 function Regra-Basica([string]$texto) {
     $n = Normaliza $texto
     if ($n -match '^(oi|ola|bom dia|boa tarde|boa noite|e ai|hey)\b') { return 'Olá! Em que posso ajudar?' }
-    if ($n -match 'tudo bem|como vai|como voce esta') { return 'Estou bem, obrigado por perguntar! Em que posso ajudar?' }
+    if ($n -match '^tudo bem|^esta tudo bem|^como vai|^como voce esta') { return 'Estou bem, obrigado por perguntar! Em que posso ajudar?' }
     if ($n -match 'quem (e|voce)|qual (e )?(o )?seu nome|voce e quem|o que voce e') { return $TEXTO_IDENTIDADE }
     if ($n -match 'o que voce (faz|sabe|pode)|^ajuda') { return $TEXTO_AJUDA }
     if ($n -match 'obrigad|valeu|^obg') { return 'De nada!' }
@@ -175,6 +178,58 @@ function Args-Chat($c) {
 
 $script:config = Le-Config
 
+# Job do Windows com KILL_ON_JOB_CLOSE: se o servidor morrer de qualquer jeito (ate fechando
+# a janela), os chats filhos morrem junto - nao ficam processos orfaos travando o executavel.
+$jobFonte = @'
+using System;
+using System.Runtime.InteropServices;
+public static class JobObj {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr CreateJobObject(IntPtr a, string lpName);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetInformationJobObject(IntPtr hJob, int infoType, IntPtr lpInfo, int length);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IoContadores { public ulong Leitura, Escrita, Outras, LeituraBytes, EscritaBytes, OutrosBytes; }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct LimitesBasicos {
+        public long TempoUsuarioPorProcesso;
+        public long TempoUsuarioPorJob;
+        public uint Banderas;
+        public UIntPtr MinimoWorkingSet;
+        public UIntPtr MaximoWorkingSet;
+        public uint LimiteDeProcessos;
+        public UIntPtr Afinidade;
+        public uint Prioridade;
+        public uint ClasseDeEscalonamento;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct LimitesEstendidos {
+        public LimitesBasicos Basicos;
+        public IoContadores Io;
+        public UIntPtr MemoriaPorProcesso;
+        public UIntPtr MemoriaDoJob;
+        public UIntPtr PicoMemoriaPorProcesso;
+        public UIntPtr PicoMemoriaDoJob;
+    }
+    public static IntPtr Cria() {
+        IntPtr j = CreateJobObject(IntPtr.Zero, null);
+        if (j == IntPtr.Zero) { return IntPtr.Zero; }
+        LimitesEstendidos info = new LimitesEstendidos();
+        info.Basicos.Banderas = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        IntPtr p = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(LimitesEstendidos)));
+        Marshal.StructureToPtr(info, p, false);
+        SetInformationJobObject(j, 9, p, Marshal.SizeOf(typeof(LimitesEstendidos))); // JobObjectExtendedLimitInformation
+        Marshal.FreeHGlobal(p);
+        return j;
+    }
+    public static void Atribui(IntPtr job, System.Diagnostics.Process p) { AssignProcessToJobObject(job, p.Handle); }
+}
+'@
+Add-Type -TypeDefinition $jobFonte
+$script:chatJob = [JobObj]::Cria()
+
 function Inicia-Chat {
     $psi = New-Object System.Diagnostics.ProcessStartInfo $exe
     $psi.Arguments = Args-Chat $script:config
@@ -184,18 +239,27 @@ function Inicia-Chat {
     $psi.RedirectStandardOutput = $true
     $psi.CreateNoWindow = $true
     $p = [System.Diagnostics.Process]::Start($psi)
-    Le-Ate-Prompt $p | Out-Null      # saudacao inicial termina em "\r\n> "
+    if ($script:chatJob -ne [IntPtr]::Zero) { [JobObj]::Atribui($script:chatJob, $p) }
+    $saudacao = Le-Ate-Prompt $p      # saudacao inicial termina em "\r\n> "
+    if ($p.HasExited) { throw "o chat nao iniciou ($($saudacao.Trim())). Confira build\chat_llm.exe e os modelos em dados\." }
     return $p
 }
 
-# Le bytes do chat ate o prompt "\r\n> " (o texto da IA nunca tem quebra de linha)
+# Le bytes do chat ate o prompt "\r\n> " (o texto da IA nunca tem quebra de linha).
+# Com timeout: se o chat travar sem responder, ele e morto e o servidor nao fica mudo.
 function Le-Ate-Prompt($p) {
     $out = $p.StandardOutput.BaseStream
     $buf = New-Object System.Collections.Generic.List[byte]
+    $byte1 = New-Object byte[] 1
     while ($true) {
-        $b = $out.ReadByte()
-        if ($b -lt 0) { break }
-        $buf.Add([byte]$b)
+        $tarefa = $out.ReadAsync($byte1, 0, 1)
+        if (-not $tarefa.Wait(120000)) {
+            try { $p.Kill(); $p.WaitForExit() } catch { }
+            throw 'o chat nao respondeu em 2 minutos e foi reiniciado'
+        }
+        $n = $tarefa.Result
+        if ($n -le 0) { break }
+        $buf.Add($byte1[0])
         $n = $buf.Count
         if ($n -ge 4 -and $buf[$n-4] -eq 13 -and $buf[$n-3] -eq 10 -and $buf[$n-2] -eq 62 -and $buf[$n-1] -eq 32) { break }
     }
@@ -293,7 +357,9 @@ function Ensina([string]$pergunta, [string]$resposta) {
 
 # Quando ha N correcoes novas, roda o ciclo de correcoes em segundo plano (ver ciclo_correcoes.ps1)
 function Dispara-Ciclo {
-    $cfg = Get-Content (Join-Path $root 'dados\ciclo_config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $n = 10
+    try { $n = [int](Get-Content (Join-Path $root 'dados\ciclo_config.json') -Raw -Encoding UTF8 | ConvertFrom-Json).N } catch {}
+    if ($n -le 0) { $n = 10 }
     $total = 0
     if (Test-Path $arquivoHistorico) { $total = @([IO.File]::ReadAllLines($arquivoHistorico, [Text.Encoding]::UTF8) | Where-Object { $_.StartsWith('R: ') }).Count }
     $incorporadas = 0
@@ -301,8 +367,9 @@ function Dispara-Ciclo {
     if (Test-Path $estadoArq) { $incorporadas = [int](Get-Content $estadoArq -Raw -Encoding UTF8 | ConvertFrom-Json).incorporadas }
     $novas = $total - $incorporadas
     $travado = Test-Path (Join-Path $root 'dados\ciclo.lock')
-    if ($novas -ge [int]$cfg.N -and -not $travado) {
-        Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'ciclo_correcoes.ps1')) -WindowStyle Hidden
+    if ($novas -ge $n -and -not $travado) {
+        # aspas no caminho: o PS 5.1 nao cita ArgumentList (quebra com espacos na pasta)
+        Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"{0}"' -f (Join-Path $PSScriptRoot 'ciclo_correcoes.ps1'))) -WindowStyle Hidden
         return $true
     }
     return $false
@@ -312,6 +379,13 @@ function Dispara-Ciclo {
 function Verifica-Troca {
     $novo = Join-Path $root 'build\chat_llm.exe.novo'
     if (-not (Test-Path $novo)) { return }
+    # um .novo truncado (build interrompido) nao substitui o chat em funcionamento
+    $tam = (Get-Item $novo).Length
+    if ($tam -lt 10000) {
+        Remove-Item -LiteralPath $novo -Force
+        Write-Host ("[{0}] chat_llm.exe.novo invalido ($tam bytes): descartado" -f (Get-Date -Format 'HH:mm:ss'))
+        return
+    }
     if ($script:chat -and -not $script:chat.HasExited) { $script:chat.Kill(); $script:chat.WaitForExit() }
     Move-Item -LiteralPath $novo -Destination $exe -Force
     $script:chat = Inicia-Chat
@@ -376,8 +450,9 @@ function Upload-Fim([string]$id) {
     $arquivo = Join-Path $UPLOAD_DIR "$id$ext"
     Move-Item -LiteralPath $parte -Destination $arquivo -Force
     [IO.File]::WriteAllText((Join-Path $UPLOAD_DIR "$id.estado"), 'processando', $UTF8SemBom)
-    # extracao em processo separado: PDFs grandes podem levar minutos e nao travam a interface
-    Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'processa_documento.ps1'),'-Id',$id,'-Arquivo',$arquivo,'-Nome',$nome) -WindowStyle Hidden
+    # extracao em processo separado: PDFs grandes podem levar minutos e nao travam a interface.
+    # os valores vao entre aspas: o PS 5.1 nao cita ArgumentList, e caminho/nome com espaco quebraria
+    Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"{0}"' -f (Join-Path $PSScriptRoot 'processa_documento.ps1')),'-Id',$id,'-Arquivo',('"{0}"' -f $arquivo),'-Nome',('"{0}"' -f $nome)) -WindowStyle Hidden
     return [pscustomobject]@{ id = $id; nome = $nome; estado = 'processando' }
 }
 
@@ -388,7 +463,11 @@ function Pendentes {
     foreach ($e in Get-ChildItem $UPLOAD_DIR -Filter '*.estado') {
         $id = [IO.Path]::GetFileNameWithoutExtension($e.Name)
         $estado = [IO.File]::ReadAllText($e.FullName, [Text.Encoding]::UTF8).Trim()
-        if ($estado -eq 'ok') { continue }
+        # processo morto no meio: "processando" a mais de 30 min vira erro na lista
+        if ($estado -eq 'processando' -and ((Get-Date) - $e.LastWriteTime).TotalMinutes -gt 30) {
+            $estado = 'erro: o processamento nao terminou; descarte e tente de novo'
+        }
+        if ($estado.StartsWith('ok')) { continue }
         $nomeArq = Join-Path $UPLOAD_DIR "$id.nome"
         $nome = if (Test-Path $nomeArq) { [IO.File]::ReadAllText($nomeArq, [Text.Encoding]::UTF8) } else { $id }
         $lista += [pscustomobject]@{ id = $id; nome = $nome; estado = $estado }
@@ -400,6 +479,12 @@ function Pendentes {
 function Restaura-Fabrica {
     $fabrica = Join-Path $root 'dados\fabrica\modelo_chat4.bin'
     if (-not (Test-Path $fabrica)) { throw 'modelo de fabrica ausente: reset cancelado, nada foi alterado' }
+    # um ciclo em andamento gravaria por cima do modelo de fabrica ao terminar
+    $lockCiclo = Join-Path $root 'dados\ciclo.lock'
+    if (Test-Path $lockCiclo) {
+        $idade = (Get-Date) - (Get-Item $lockCiclo).LastWriteTime
+        if ($idade.TotalHours -lt 2) { throw 'ciclo de correcoes em andamento: aguarde o fim dele antes de restaurar' }
+    }
     $bk = Join-Path $root ("dados\backups\antes-do-reset-" + (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'))
     New-Item -ItemType Directory -Force $bk | Out-Null
     # nada e apagado: tudo que o usuario fez vai para o backup
@@ -415,7 +500,10 @@ function Restaura-Fabrica {
     # reconstroi o chat com o modelo de fabrica e volta as configuracoes padrao
     if ($script:chat -and -not $script:chat.HasExited) { $script:chat.Kill(); $script:chat.WaitForExit() }
     cmd /c "interface\ciclo\chat.bat dados\modelo_chat4.bin build\chat_llm.exe.novo" | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'falha ao montar o chat de fabrica (o modelo ja foi restaurado; rode o build manualmente)' }
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item (Join-Path $root 'build\chat_llm.exe.novo') -Force -ErrorAction SilentlyContinue
+        throw 'falha ao montar o chat de fabrica (o modelo ja foi restaurado; rode o build manualmente)'
+    }
     Move-Item -LiteralPath (Join-Path $root 'build\chat_llm.exe.novo') -Destination $exe -Force
     $script:config = Valida-Config $CONFIG_PADRAO
     [IO.File]::WriteAllText($configArq, ($script:config | ConvertTo-Json), $UTF8SemBom)
@@ -442,7 +530,15 @@ try {
         $res = $ctx.Response
         $rota = $req.Url.AbsolutePath
         try {
-            if ($req.HttpMethod -eq 'GET' -and $rota -eq '/') {
+            # so a propria interface fala com o servidor: Host fixo (mata DNS rebinding) e,
+            # nos POST, um header que navegador de outro site nao consegue mandar sem
+            # preflight de CORS (que este servidor nao responde)
+            $hostOk = ($req.Headers['Host'] -eq 'localhost:8765')
+            $postOk = ($req.HttpMethod -ne 'POST' -or $req.Headers['X-Satiro'] -eq '1')
+            if (-not $hostOk -or -not $postOk) {
+                $res.StatusCode = 403
+            }
+            elseif ($req.HttpMethod -eq 'GET' -and $rota -eq '/') {
                 $html = [IO.File]::ReadAllBytes($pagina)
                 $res.ContentType = 'text/html; charset=utf-8'
                 $res.OutputStream.Write($html, 0, $html.Length)
@@ -490,10 +586,10 @@ try {
             elseif ($req.HttpMethod -eq 'POST' -and $rota -eq '/api/upload/descartar') {
                 $dados = Le-Corpo $req
                 if (-not (Id-Seguro ([string]$dados.id))) { throw 'identificador invalido' }
-                $estadoArq = Join-Path $UPLOAD_DIR (([string]$dados.id) + '.estado')
-                if (Test-Path $estadoArq) {
-                    New-Item -ItemType Directory -Force (Join-Path $UPLOAD_DIR 'descartados') | Out-Null
-                    Move-Item -LiteralPath $estadoArq -Destination (Join-Path $UPLOAD_DIR 'descartados') -Force
+                New-Item -ItemType Directory -Force (Join-Path $UPLOAD_DIR 'descartados') | Out-Null
+                foreach ($suf in '.estado','.part','.nome') {
+                    $arqRes = Join-Path $UPLOAD_DIR (([string]$dados.id) + $suf)
+                    if (Test-Path $arqRes) { Move-Item -LiteralPath $arqRes -Destination (Join-Path $UPLOAD_DIR 'descartados') -Force }
                 }
                 Responde-Json $res ([pscustomobject]@{ ok = $true })
             }
@@ -522,10 +618,12 @@ try {
             }
         }
         catch {
-            Responde-Json $res ([pscustomobject]@{ erro = $_.Exception.Message }) 400
+            # o cliente pode ter desconectado (F5/aba fechada): escrever de novo lancaria
+            # de novo e mataria o servidor inteiro; o try interno engole isso
+            try { Responde-Json $res ([pscustomobject]@{ erro = $_.Exception.Message }) 400 } catch { }
         }
         finally {
-            $res.Close()
+            try { $res.Close() } catch { }
         }
     }
 }

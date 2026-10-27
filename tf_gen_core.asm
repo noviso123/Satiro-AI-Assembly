@@ -145,10 +145,15 @@ gc_say_utf8:
 .ok:
     jmp gc_say
 
-; ---------- gc_num: le um numero decimal em rsi ("12", "0.8", "0,8") ---------------------
+; ---------- gc_num: le um numero decimal em rsi ("12", "0.8", "0,8", "-1.5") -------------
 ; rax = parte inteira, xmm0 = valor; rsi avanca.
 gc_num:
     xor eax, eax
+    xor r8d, r8d                     ; 1 = numero negativo
+    cmp byte [rsi], '-'
+    jne .i
+    mov r8d, 1
+    inc rsi
 .i:
     movzx ecx, byte [rsi]
     sub ecx, '0'
@@ -179,13 +184,20 @@ gc_num:
     inc rsi
     jmp .fr
 .f:
+    test r8d, r8d                    ; negativo: inverte inteiro e valor
+    jz .fim
+    neg rax
+    xorps xmm2, xmm2
+    subss xmm2, xmm0
+    movaps xmm0, xmm2
+.fim:
     ret
 
 ; ---------- gc_args: le as opcoes da linha de comando ------------------------------------
 gc_args:
     push rbx
     push rsi
-    sub rsp, 32
+    sub rsp, 40                      ; 40 (e nao 32): mantem rsp alinhado em 16 nas chamadas
     call [__imp_GetCommandLineA]
     mov rsi, rax
     cmp byte [rsi], '"'
@@ -223,9 +235,12 @@ gc_args:
     add rsi, 2
     cmp bl, 'g'
     je .g
-.ev:                                 ; espacos antes do valor
+.ev:                                 ; espacos (e tab) antes do valor
     cmp byte [rsi], ' '
+    je .ev_pula
+    cmp byte [rsi], 9
     jne .val
+.ev_pula:
     inc rsi
     jmp .ev
 .val:
@@ -281,7 +296,7 @@ gc_args:
     inc rsi
     jmp .palavra
 .fim:
-    add rsp, 32
+    add rsp, 40
     pop rsi
     pop rbx
     ret
@@ -301,6 +316,7 @@ gc_le_arq:
     cmp rax, -1
     je .fim
     mov [gc_hfile], rax
+    mov dword [gc_wrote], 0          ; leitura falha nao pode devolver escrita antiga
     mov rcx, rax
     mov rdx, [rsp+56]
     mov r8, [rsp+64]
@@ -443,10 +459,13 @@ gc_vocab:
     mov [rax+rcx*4], r8d
     lea rax, [gc_vb]
     mov [rax+rcx*4], r9d
-    ; texto do token = texto(a) + texto(b)
+    ; texto do token = texto(a) + texto(b); acima de 63 bytes nao caberia nos
+    ; buffers de resposta do chat e do gerador (64 bytes por token)
     lea rax, [gc_vlen]
     mov r10d, [rax+r8*4]
     add r10d, [rax+r9*4]
+    cmp r10d, 63
+    ja .erro
     mov [rax+rcx*4], r10d
     mov eax, r12d
     add eax, r10d

@@ -71,6 +71,7 @@ section .data
 align 8
 as_e_sym:       db "simbolo indefinido", 0
 as_e_expr:      db "expressao nao suportada", 0
+as_e_divzero:   db "divisao por zero em expressao", 0
 as_e_num:       db "numero invalido", 0
 as_e_dup:       db "rotulo definido duas vezes", 0
 as_e_pool:      db "pool de nomes cheio", 0

@@ -22,6 +22,8 @@ as_padtop:      resq 1
 section .data
 align 8
 as_e_bss:       db "dados nao permitidos em .bss", 0
+as_e_seccap:    db "dados maiores que a secao (16 MB)", 0
+as_e_nmcap:     db "rotulo local comprido demais para o nome completo", 0
 as_e_ins0:      db "linha sem instrucao ou diretiva", 0
 as_e_equ:       db "equ precisa de valor conhecido na passagem 1", 0
 as_e_dup2:      db "rotulo definido duas vezes", 0
@@ -81,6 +83,11 @@ as_emit:
     jne .texto
     add rdx, AS_SEC_SIZE
 .texto:
+    ; a secao tem AS_SEC_SIZE bytes: escrever alem dela corromperia a seguinte
+    mov rax, rbx
+    add rax, r13
+    cmp rax, AS_SEC_SIZE
+    ja .estoura
     add rdx, rbx
     xor ecx, ecx
 .copia:
@@ -90,6 +97,9 @@ as_emit:
     mov [rdx+rcx], al
     inc rcx
     jmp .copia
+.estoura:
+    lea rsi, [as_e_seccap]
+    jmp as_fail_plain
 .avanca:
     mov rax, [as_cur]
     lea rdx, [as_off]
@@ -526,6 +536,8 @@ as_dispatch:
     cmp qword [E_K], 0
     jne .erro_arg
     mov rax, [E_V]
+    test rax, rax
+    js .erro_arg                    ; contagem negativa nunca fez sentido aqui
     mov rdx, [sd_tmp]
     imul rax, rdx
     mov rcx, rax
@@ -597,11 +609,14 @@ as_streq:
     ret
 
 
-; as_lower_copy: rsi = texto, rcx = tamanho, rdi = destino (zero-terminado, minusculo)
+; as_lower_copy: rsi = texto, rcx = tamanho, rdi = destino (zero-terminado, minusculo).
+; Limitado a 30 bytes + zero: o destino sempre tem 32 bytes (as_mn).
 as_lower_copy:
     xor edx, edx
 .l:
     cmp rdx, rcx
+    jae .f
+    cmp rdx, 30
     jae .f
     mov al, [rsi+rdx]
     cmp al, 'A'
@@ -674,7 +689,9 @@ as_emit_pad:
     mov rbx, rcx
     mov rax, [as_cur]
     cmp rax, 3
-    je .avanca_bss
+    je .bss_teto
+    cmp rcx, AS_SEC_SIZE            ; secao com buffer: nao passa do tamanho dela
+    ja .estoura
     lea r8, [as_padnop]             ; align preenche com NOP em qualquer secao (como o NASM)
 .zero:
 .loop:
@@ -691,6 +708,10 @@ as_emit_pad:
     pop rcx
     sub rbx, rcx
     jmp .loop
+.bss_teto:
+    mov rax, 0x10000000             ; .bss nao tem buffer: teto folgado contra absurdo
+    cmp rbx, rax
+    ja .estoura
 .avanca_bss:
     mov rax, [as_cur]
     lea rdx, [as_off]
@@ -698,6 +719,9 @@ as_emit_pad:
 .fim:
     pop rbx
     ret
+.estoura:
+    lea rsi, [as_e_seccap]
+    jmp as_fail_plain
 
 ; as_emit_zeros: rcx = quantidade de zeros (res*)
 as_emit_zeros:
@@ -705,7 +729,9 @@ as_emit_zeros:
     mov rbx, rcx
     mov rax, [as_cur]
     cmp rax, 3
-    je .avanca_bss
+    je .bss_teto
+    cmp rcx, AS_SEC_SIZE            ; secao com buffer: nao passa do tamanho dela
+    ja .estoura
 .loop:
     test rbx, rbx
     jz .fim
@@ -720,6 +746,11 @@ as_emit_zeros:
     pop rcx
     sub rbx, rcx
     jmp .loop
+.bss_teto:
+    mov rax, 0x10000000             ; .bss nao tem buffer: teto folgado contra absurdo
+    cmp rbx, rax
+    ja .estoura
+    jmp .avanca_bss
 .avanca_bss:
     mov rax, [as_cur]
     lea rdx, [as_off]
@@ -727,6 +758,9 @@ as_emit_zeros:
 .fim:
     pop rbx
     ret
+.estoura:
+    lea rsi, [as_e_seccap]
+    jmp as_fail_plain
 
 ; as_data_by_name: rsi = nome da diretiva (minusculo) -> processa a lista restante
 as_data_by_name:
@@ -1019,6 +1053,11 @@ as_fullname:
     mov [st_full_p], rax
     mov rax, r9
     add rax, [st_full_n]
+    cmp rax, 1023                   ; as_nmbuf tem 1024: rotulo local comprido nao transborda
+    jbe .tudo_ok
+    lea rsi, [as_e_nmcap]
+    jmp as_fail_plain
+.tudo_ok:
     mov [st_full_n], rax
 .fim:
     ret

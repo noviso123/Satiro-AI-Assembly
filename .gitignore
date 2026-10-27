@@ -1,5 +1,6 @@
 # Binarios e objetos de build (gerados por build\*.bat)
-build/
+build/*
+# excecoes: as ferramentas de bootstrap (o montador/linker compilam todo o resto)
 *.obj
 *.exe
 *.dll
@@ -10,6 +11,11 @@ dados/corpus.tok
 dados/sft_pr.txt
 dados/sft_pr.tok
 dados/pira_*.tok
+dados/pira_*.tsv
+
+# Qualquer .bin em dados\ e artefato de treino; so o vocabulario fica no repositorio
+dados/*.bin
+!dados/vocab_bpe.bin
 
 # Estado local da interface e modelo de fabrica (modelos nao sao publicados)
 dados/fabrica/
@@ -45,3 +51,7 @@ PARAR_TREINO
 # Arquivos do sistema
 Thumbs.db
 desktop.ini
+
+# Bootstrap do clone novo: o montador e o linker vem no repositorio
+!build/asm.exe
+!build/pelink.exe

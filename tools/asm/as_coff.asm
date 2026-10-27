@@ -20,6 +20,7 @@ align 8
 co_s_text:      db ".text", 0
 co_s_data:      db ".data", 0
 co_s_bss:       db ".bss", 0
+co_e_relocs:   db "secao com realocacoes demais (65534 e o limite do formato COFF)", 0
 
 section .text
 
@@ -290,6 +291,11 @@ co_sechdr:
     push r12
     mov rbx, rcx
     mov r12, r10
+    cmp r12, 0xFFFE                 ; o campo COFF tem 16 bits: mais que isso truncaria
+    jbe .relocs_ok
+    lea rsi, [co_e_relocs]
+    jmp as_fail_plain
+.relocs_ok:
     mov rdi, [co_p]
     ; nome de 8 bytes
     xor ecx, ecx
@@ -311,9 +317,13 @@ co_sechdr:
     inc rcx
     jmp .nmz2
 .nmf:
-    add qword [co_p], 8
+    add qword [co_p], 8             ; os bytes do nome foram escritos direto em co_p
+    mov rax, rbx
+    test r11d, 0x80                 ; CNT_UNINITIALIZED_DATA: so .bss leva VirtualSize
+    jnz .vsz_bss
     xor eax, eax
-    call co_put32                   ; VirtualSize
+.vsz_bss:
+    call co_put32                   ; VirtualSize (0; em .bss, o tamanho)
     xor eax, eax
     call co_put32                   ; VirtualAddress
     mov rax, rbx
@@ -486,6 +496,10 @@ co_copia_nome:
     mov rsi, [rdx+rcx*8]
     lea rdx, [as_sym_len]
     mov rcx, [rdx+rcx*8]
+    cmp rcx, 1023                   ; as_nmbuf tem 1024 bytes (o resto do montador usa)
+    jbe .tam_ok
+    mov rcx, 1023                   ; corta em vez de transbordar para as_mn
+.tam_ok:
     lea rdi, [as_nmbuf]
     xor edx, edx
 .c:

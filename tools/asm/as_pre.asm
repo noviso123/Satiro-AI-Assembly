@@ -57,6 +57,8 @@ pre_e_inc:     db "%include sem caminho entre aspas", 0
 pre_e_if:      db "%if espera: numero OP numero", 0
 pre_e_space:   db "tabela de defines cheia", 0
 pre_e_exbuf:   db "codigo expandido grande demais", 0
+pre_e_cond:    db "condicionais %if/%ifdef aninhados demais", 0
+pre_e_pool:    db "pool de caminhos de include cheio", 0
 pre_s_pref_if:    db "%if ", 0
 pre_s_pref_else:  db "%else", 0
 pre_s_pref_endif: db "%endif", 0
@@ -398,7 +400,10 @@ pre_cond_push:
     push rax
     mov rcx, [pre_cdepth]
     cmp rcx, AS_COND_MAX
-    jae .fim
+    jb .tem_espaco
+    lea rsi, [pre_e_cond]
+    jmp as_fail
+.tem_espaco:
     call pre_active                 ; pai ativo?
     lea rdx, [pre_cpar]
     mov rcx, [pre_cdepth]
@@ -409,6 +414,9 @@ pre_cond_push:
     mov rcx, [pre_cdepth]
     mov [rdx+rcx*8], rax
     lea rdx, [pre_cfirst]
+    mov qword [rdx+rcx*8], 0
+    ; um bloco normal nao herda o "adiado" de um %if simbolico que ja fechou neste nivel
+    lea rdx, [pre_cdef]
     mov qword [rdx+rcx*8], 0
     inc qword [pre_cdepth]
 .fim:
@@ -795,6 +803,12 @@ pre_line:
     inc rax
     jmp .pc
 .pc_fim:
+    add rax, [pre_pathtop]
+    inc rax                          ; + o zero final
+    cmp rax, AS_PATHPOOL
+    ja .pool_cheio
+    sub rax, [pre_pathtop]
+    dec rax
     add [pre_pathtop], rax
     inc qword [pre_pathtop]
     inc qword [pre_level]
@@ -806,6 +820,9 @@ pre_line:
     jmp .vazia
 .inc_fundo:
     lea rsi, [pre_e_depth]
+    jmp as_fail
+.pool_cheio:
+    lea rsi, [pre_e_pool]
     jmp as_fail
 .inc_erro:
     lea rsi, [pre_e_inc]
@@ -827,6 +844,8 @@ pre_line:
     je .dn_fim
     cmp al, 9
     je .dn_fim
+    cmp ecx, 254                    ; pre_word tem 256 bytes (mesmo teto dos outros usos)
+    jae .dn_fim
     mov [rdi+rcx], al
     inc rcx
     inc rsi
@@ -915,6 +934,8 @@ pre_line:
     call pre_cond_push
     pop rdx
     mov rcx, [pre_cdepth]
+    test rcx, rcx                    ; push recusado (profundidade cheia): nao escrever cdef
+    jz .vazia
     dec rcx
     lea rax, [pre_cdef]
     mov [rax+rcx*8], rdx

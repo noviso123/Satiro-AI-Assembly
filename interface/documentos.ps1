@@ -15,6 +15,7 @@ $DOC_INDICE = Join-Path $DOC_DIR 'indice.json'
 $DOC_REMOVIDOS = Join-Path $DOC_DIR 'removidos'
 $DOC_LIMITE_BYTES = 300MB
 $script:sentencas = New-Object System.Collections.ArrayList
+$script:df = @{}                  # em quantos trechos cada termo aparece (peso IDF)
 $script:documentos = New-Object System.Collections.ArrayList
 
 function Decodifica-Xml([string]$s) {
@@ -99,20 +100,48 @@ function Texto-Pdf([byte[]]$bytes) {
 
 function Extrai-Texto([string]$caminho, [string]$nome) {
     $ext = [IO.Path]::GetExtension($nome).ToLowerInvariant()
-    if ($ext -in @('.txt', '.md', '.csv')) { return [IO.File]::ReadAllText($caminho, [Text.Encoding]::UTF8) }
+    if ($ext -in @('.txt', '.md', '.csv')) {
+        # UTF-8 e o padrao; sem BOM e com bytes invalidos, o arquivo provavelmente
+        # veio do Bloco de Notas antigo (ANSI/Latin-1): decodificar como Latin-1
+        $bytes = [IO.File]::ReadAllBytes($caminho)
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            $bytes = $bytes[3..($bytes.Length - 1)]
+        }
+        $estrito = [Text.UTF8Encoding]::new($false, $true)
+        try { return $estrito.GetString($bytes) } catch {
+            return [Text.Encoding]::GetEncoding(28591).GetString($bytes)
+        }
+    }
     if ($ext -eq '.docx') { return Texto-Docx $caminho }
-    if ($ext -eq '.pdf') { return Texto-Pdf ([IO.File]::ReadAllBytes($caminho)) }
+    if ($ext -eq '.pdf') {
+        $t = Texto-Pdf ([IO.File]::ReadAllBytes($caminho))
+        # guarda de qualidade: PDF escaneado ou com fontes nao suportadas vira ruído
+        # binário que pareceria indexado (milhares de "trechos" sem sentido). Texto
+        # real tem espaços a cada poucos letras e maioria de letras; ruído, não.
+        if ($t.Length -gt 500) {
+            $espacos = ([regex]::Matches($t, ' ')).Count
+            $letras = ([regex]::Matches($t, '\p{L}')).Count
+            if (($espacos / $t.Length) -lt 0.06 -or ($letras / $t.Length) -lt 0.55) {
+                throw 'nao consegui extrair texto legivel deste PDF (ele parece escaneado ou usa fontes nao suportadas pelo extrator)'
+            }
+        }
+        return $t
+    }
     throw "formato nao suportado: $ext (use .txt, .md, .csv, .docx ou .pdf)"
 }
 
-# Divide o texto em frases (trechos) e as indexa; devolve quantos trechos entraram
+# Divide o texto em frases (trechos) e as indexa; devolve quantos trechos entraram.
+# TokSet (hashtable) existe para a busca ser O(1) por termo: documentos grandes geram
+# milhares de trechos e a intersecao com -contains/Where-Object viraria o gargalo.
 function Divide-Sentencas([string]$texto, [string]$nome) {
     $n = 0
     foreach ($p in [regex]::Split($texto, '(?<=[\.\!\?])\s+|\n+')) {
         $t = $p.Trim()
         if ($t.Length -ge 20) {
             $n++
-            [void]$script:sentencas.Add([pscustomobject]@{ Doc = $nome; Texto = $t; Tok = (Palavras $t) })
+            $conj = @{}
+            foreach ($w in (Palavras $t)) { $conj[$w] = $true }
+            [void]$script:sentencas.Add([pscustomobject]@{ Doc = $nome; Texto = $t; Tok = @($conj.Keys); TokSet = $conj })
         }
     }
     return $n
@@ -171,21 +200,14 @@ function Carrega-Documentos {
         $n = Divide-Sentencas $texto $d.nome
         [void]$script:documentos.Add([pscustomobject]@{ id = $d.id; nome = $d.nome; trechos = $n })
     }
-}
-
-function Adiciona-Documento([string]$nome, [byte[]]$bytes) {
-    if ($bytes.Length -gt $DOC_LIMITE_BYTES) { throw 'arquivo maior que 300 MB' }
-    New-Item -ItemType Directory -Force $DOC_DIR | Out-Null
-    $id = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 6))
-    $tmp = Join-Path $DOC_DIR ($id + [IO.Path]::GetExtension($nome).ToLowerInvariant())
-    [IO.File]::WriteAllBytes($tmp, $bytes)
-    try { $texto = Extrai-Texto $tmp $nome }
-    finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
-    if (-not $texto -or $texto.Trim().Length -lt 20) { throw 'nao consegui extrair texto deste arquivo (PDF escaneado precisa de OCR)' }
-    [IO.File]::WriteAllText((Join-Path $DOC_DIR ($id + '.txt')), $texto, $UTF8SemBom)
-    Adiciona-No-Indice $id $nome
-    Carrega-Documentos
-    return @($script:documentos | Where-Object { $_.id -eq $id })[0]
+    # raro entre os trechos vale mais na busca (peso IDF): termo em 1 de 500
+    # trechos pesa mais que um termo em 400 deles
+    $script:df = @{}
+    foreach ($s in $script:sentencas) {
+        foreach ($t in $s.Tok) {
+            if ($script:df.ContainsKey($t)) { $script:df[$t]++ } else { $script:df[$t] = 1 }
+        }
+    }
 }
 
 # Remove da lista e move o texto para dados\documentos\removidos (nada e apagado de vez)
@@ -200,15 +222,27 @@ function Remove-Documento([string]$id) {
     Carrega-Documentos
 }
 
-# Trechos dos documentos que tem termos em comum com a pergunta (os mais relevantes primeiro)
+# Trechos dos documentos que tem termos em comum com a pergunta (os mais relevantes
+# primeiro). Peso por termo = IDF (termo raro entre os trechos pesa mais), como no
+# BM25 simplificado: um nome proprio exclusivo de um trecho vence uma palavra comum.
 function Busca-Documentos([string]$pergunta) {
     $tok = Palavras $pergunta
     if ($tok.Count -eq 0) { return @() }
     # perguntas curtas (ate 2 termos) aceitam um termo em comum; as demais pedem dois, para evitar ruido
     $minimo = if ($tok.Count -le 2) { 1 } else { 2 }
+    $N = [Math]::Max($script:sentencas.Count, 1)
     $achados = foreach ($s in $script:sentencas) {
-        $inter = @($tok | Where-Object { $s.Tok -contains $_ }).Count
-        if ($inter -ge $minimo) { [pscustomobject]@{ S = $s; Inter = $inter; Score = ($inter / $tok.Count) } }
+        $inter = 0
+        $peso = 0.0
+        foreach ($t in $tok) {
+            if ($s.TokSet.ContainsKey($t)) {
+                $inter++
+                $df = 1
+                if ($script:df.ContainsKey($t)) { $df = [int]$script:df[$t] }
+                $peso += [Math]::Log(1.0 + $N / (1.0 + $df))
+            }
+        }
+        if ($inter -ge $minimo) { [pscustomobject]@{ S = $s; Inter = $inter; Score = $peso } }
     }
-    return @($achados | Sort-Object -Property @{ Expression = 'Inter'; Descending = $true }, @{ Expression = 'Score'; Descending = $true } | Select-Object -First 3)
+    return @($achados | Sort-Object -Property Score -Descending | Select-Object -First 3)
 }

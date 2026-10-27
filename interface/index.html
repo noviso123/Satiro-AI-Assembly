@@ -398,31 +398,53 @@
     } catch (e) { /* servidor fora do ar: tenta de novo na proxima acao */ }
   }
 
-  // envia o arquivo em partes de 4 MB (funciona para arquivos grandes) e pede o processamento
+  // envia o arquivo em partes binarias de 8 MB (sem base64: 4x menos bytes na rede)
+  // e pede o processamento; pode ser cancelado no meio
+  let enviando = null;             // AbortController do envio em andamento
+
   async function enviaArquivo(arq) {
-    const TAM_PARTE = 4 * 1024 * 1024;
+    if (enviando) { avisoCentral('Ja ha um envio em andamento; cancele-o ou aguarde.'); return; }
+    const TAM_PARTE = 8 * 1024 * 1024;
+    const ctrl = new AbortController();
+    enviando = ctrl;
     const aviso = avisoCentral('enviando "' + arq.name + '"...');
-    const lerBase64 = (blob) => new Promise((ok, falha) => {
-      const l = new FileReader();
-      l.onload = () => ok(l.result);
-      l.onerror = () => falha(new Error('falha ao ler o arquivo'));
-      l.readAsDataURL(blob);
-    });
+    const cancelar = document.createElement('button');
+    cancelar.className = 'secundario';
+    cancelar.textContent = 'Cancelar';
+    cancelar.addEventListener('click', () => ctrl.abort());
+    aviso.appendChild(cancelar);
+    const mb = (n) => (n / (1024 * 1024)).toFixed(1) + ' MB';
+    let di = null;
     try {
-      const di = await postJson('/api/upload/inicio', { nome: arq.name });
+      di = await postJson('/api/upload/inicio', { nome: arq.name });
       if (di.erro) throw new Error(di.erro);
       for (let pos = 0; pos < arq.size; pos += TAM_PARTE) {
-        const dataUrl = await lerBase64(arq.slice(pos, Math.min(pos + TAM_PARTE, arq.size)));
-        const dp = await postJson('/api/upload/parte', { id: di.id, dados: dataUrl });
+        const fim = Math.min(pos + TAM_PARTE, arq.size);
+        const fatia = await arq.slice(pos, fim).arrayBuffer();
+        const r = await fetch('/api/upload/parte?id=' + encodeURIComponent(di.id) + '&offset=' + pos, {
+          method: 'POST',
+          headers: { 'X-Satiro': '1', 'Content-Type': 'application/octet-stream' },
+          body: fatia,
+          signal: ctrl.signal
+        });
+        let dp;
+        try { dp = await r.json(); } catch (e) { dp = { erro: 'resposta invalida do servidor (HTTP ' + r.status + ')' }; }
         if (dp.erro) throw new Error(dp.erro);
-        aviso.textContent = 'enviando "' + arq.name + '": ' + Math.round(100 * Math.min(pos + TAM_PARTE, arq.size) / arq.size) + '%';
+        aviso.firstChild.textContent = 'enviando "' + arq.name + '": ' + mb(fim) + ' de ' + mb(arq.size) + ' ';
       }
       const df = await postJson('/api/upload/fim', { id: di.id });
       if (df.erro) throw new Error(df.erro);
       aviso.textContent = 'Documento "' + arq.name + '" recebido. Processando em segundo plano: arquivos grandes podem levar minutos.';
       carregaDocumentos();
     } catch (e) {
-      aviso.textContent = 'Não consegui anexar "' + arq.name + '": ' + e.message;
+      if (e.name === 'AbortError') {
+        try { if (di && di.id) { await postJson('/api/upload/descartar', { id: di.id }); } } catch (x) { }
+        aviso.textContent = 'Envio de "' + arq.name + '" cancelado.';
+      } else {
+        aviso.textContent = 'Não consegui anexar "' + arq.name + '": ' + e.message;
+      }
+    } finally {
+      enviando = null;
     }
   }
 

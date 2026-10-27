@@ -24,8 +24,8 @@ try {
     if (-not $texto -or $texto.Trim().Length -lt 20) { throw 'nao consegui extrair texto deste arquivo (PDF escaneado precisa de OCR)' }
     [IO.File]::WriteAllText((Join-Path $DOC_DIR ($Id + '.txt')), $texto, $UTF8SemBom)
     Adiciona-No-Indice $Id $Nome
-    Diz 'ok'
-    Remove-Item (Join-Path $root "dados\uploads\$Id.nome") -Force -ErrorAction SilentlyContinue
+    # sucesso nao precisa de estado: sem arquivo, o item sai da lista de pendentes sozinho
+    Remove-Item (Join-Path $root "dados\uploads\$Id.estado"), (Join-Path $root "dados\uploads\$Id.nome") -Force -ErrorAction SilentlyContinue
 }
 catch {
     Diz ('erro: ' + $_.Exception.Message)

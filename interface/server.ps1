@@ -429,16 +429,23 @@ function Upload-Inicia([string]$nome) {
     return $id
 }
 
-function Upload-Parte([string]$id, [string]$b64) {
+# Parte do envio: o corpo HTTP E o arquivo (binario puro, sem base64 nem JSON).
+# offset confere que a parte chegou em ordem (sem buracos); json era 33% maior e lento.
+function Upload-Parte([string]$id, $req) {
     if (-not (Id-Seguro $id)) { throw 'identificador invalido' }
     $arq = Join-Path $UPLOAD_DIR "$id.part"
-    if (-not (Test-Path $arq)) { throw 'envio nao encontrado' }
-    if ($b64.Contains(',')) { $b64 = $b64.Substring($b64.LastIndexOf(',') + 1) }
-    $bytes = [Convert]::FromBase64String($b64)
-    if ((Get-Item $arq).Length + $bytes.Length -gt $UPLOAD_MAX) { throw 'arquivo maior que 300 MB' }
+    if (-not (Test-Path $arq)) { throw 'envio nao encontrado (expirado ou cancelado)' }
+    $offset = 0
+    [void][int64]::TryParse([string]$req.QueryString['offset'], [ref]$offset)
+    $jaTem = (Get-Item $arq).Length
+    if ($offset -ne $jaTem) { throw "parte fora de ordem (esperado offset $jaTem, veio $offset)" }
+    $tam = $req.ContentLength64
+    if ($tam -le 0) { throw 'parte vazia' }
+    if ($tam -gt 32MB) { throw 'parte grande demais (maximo 32 MB)' }
+    if ($jaTem + $tam -gt $UPLOAD_MAX) { throw 'arquivo maior que 300 MB' }
     $fs = [IO.File]::Open($arq, [IO.FileMode]::Append, [IO.FileAccess]::Write)
-    try { $fs.Write($bytes, 0, $bytes.Length) } finally { $fs.Close() }
-    return (Get-Item $arq).Length
+    try { $req.InputStream.CopyTo($fs) } finally { $fs.Close() }
+    return [pscustomobject]@{ ok = $true; recebido = (Get-Item $arq).Length }
 }
 
 function Upload-Fim([string]$id) {
@@ -456,18 +463,30 @@ function Upload-Fim([string]$id) {
     return [pscustomobject]@{ id = $id; nome = $nome; estado = 'processando' }
 }
 
-# documentos ainda sendo processados (ou com erro), para a lista da interface
+# documentos ainda sendo processados (ou com erro), para a lista da interface.
+# Aproveita para varrer lixo: .part abandonado (envio iniciado e nunca concluido,
+# invisivel para o usuario) a mais de 2 horas vai para descartados.
 function Pendentes {
     if (-not (Test-Path $UPLOAD_DIR)) { return @() }
+    New-Item -ItemType Directory -Force (Join-Path $UPLOAD_DIR 'descartados') | Out-Null
+    foreach ($p in Get-ChildItem $UPLOAD_DIR -Filter '*.part') {
+        if (((Get-Date) - $p.LastWriteTime).TotalHours -gt 2) {
+            Move-Item -LiteralPath $p.FullName -Destination (Join-Path $UPLOAD_DIR 'descartados') -Force
+        }
+    }
     $lista = @()
     foreach ($e in Get-ChildItem $UPLOAD_DIR -Filter '*.estado') {
         $id = [IO.Path]::GetFileNameWithoutExtension($e.Name)
         $estado = [IO.File]::ReadAllText($e.FullName, [Text.Encoding]::UTF8).Trim()
+        # marcador "ok" de versoes antigas: o novo fluxo apaga no sucesso; limpar os velhos
+        if ($estado -eq 'ok') {
+            if (((Get-Date) - $e.LastWriteTime).TotalHours -gt 1) { Remove-Item $e.FullName -Force }
+            continue
+        }
         # processo morto no meio: "processando" a mais de 30 min vira erro na lista
         if ($estado -eq 'processando' -and ((Get-Date) - $e.LastWriteTime).TotalMinutes -gt 30) {
             $estado = 'erro: o processamento nao terminou; descarte e tente de novo'
         }
-        if ($estado.StartsWith('ok')) { continue }
         $nomeArq = Join-Path $UPLOAD_DIR "$id.nome"
         $nome = if (Test-Path $nomeArq) { [IO.File]::ReadAllText($nomeArq, [Text.Encoding]::UTF8) } else { $id }
         $lista += [pscustomobject]@{ id = $id; nome = $nome; estado = $estado }
@@ -576,8 +595,8 @@ try {
                 Responde-Json $res ([pscustomobject]@{ id = (Upload-Inicia ([string]$dados.nome)) })
             }
             elseif ($req.HttpMethod -eq 'POST' -and $rota -eq '/api/upload/parte') {
-                $dados = Le-Corpo $req
-                Responde-Json $res ([pscustomobject]@{ ok = $true; tamanho = (Upload-Parte ([string]$dados.id) ([string]$dados.dados)) })
+                # corpo binario direto; id/offset vem na query (sem JSON: base64 inflava 33%)
+                Responde-Json $res (Upload-Parte ([string]$req.QueryString['id']) $req)
             }
             elseif ($req.HttpMethod -eq 'POST' -and $rota -eq '/api/upload/fim') {
                 $dados = Le-Corpo $req
@@ -598,15 +617,6 @@ try {
                 if ([string]$dados.confirmar -ne 'RESTAURAR') { throw 'para restaurar o padrão de fábrica, confirme com a palavra RESTAURAR' }
                 $bk = Restaura-Fabrica
                 Responde-Json $res ([pscustomobject]@{ ok = $true; backup = $bk; config = $script:config })
-            }
-            elseif ($req.HttpMethod -eq 'POST' -and $rota -eq '/api/anexo') {
-                $dados = Le-Corpo $req
-                $nome = [IO.Path]::GetFileName([string]$dados.nome)
-                $b64 = [string]$dados.dados
-                if ($b64.Contains(',')) { $b64 = $b64.Substring($b64.LastIndexOf(',') + 1) }
-                $bytes = [Convert]::FromBase64String($b64)
-                $doc = Adiciona-Documento $nome $bytes
-                Responde-Json $res ([pscustomobject]@{ ok = $true; documento = $doc })
             }
             elseif ($req.HttpMethod -eq 'POST' -and $rota -eq '/api/documento/remover') {
                 $dados = Le-Corpo $req

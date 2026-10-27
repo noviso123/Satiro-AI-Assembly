@@ -109,15 +109,20 @@ O contexto só limita quando a conversa ocupa mais tokens do que ele. Para pergu
 
 ### Documentos anexados (PDF, Word, TXT, MD, CSV)
 
-Na interface, o botão **Anexar** envia um arquivo (até 300 MB, enviado em partes). O servidor extrai o texto, divide em
-trechos e passa a responder com base nele, citando o nome do arquivo.
+Na interface, o botão **Anexar** envia um arquivo (até 300 MB, enviado em partes binárias de 8 MB,
+com botão **Cancelar** durante o envio). O servidor extrai o texto, divide em trechos e passa a
+responder com base nele, citando o nome do arquivo. A busca prioriza termos raros entre os trechos
+(peso IDF), e arquivos de texto no formato ANSI do Windows (Bloco de Notas antigo) são detectados
+e decodificados corretamente.
 
 - **Suportados:** `.pdf` (com texto embutido), `.docx`, `.txt`, `.md`, `.csv`.
 - **Não suportados:** `.doc` (Word antigo) e `.xls`. Salve como `.docx`.
-- **PDF escaneado** (imagem) não tem texto e não é lido: não há OCR no projeto. PDFs com fontes de
-  codificação própria podem sair com caracteres trocados.
+- **PDF escaneado** (imagem) não tem texto e não é lido: não há OCR no projeto. PDFs assim — ou com
+  fontes de codificação própria — são **rejeitados no anexo com uma mensagem clara**, em vez de
+  indexar trechos sem sentido.
 - Os documentos ficam em `dados\documentos\`. **Remover** tira o documento das respostas e move o texto
-  para `dados\documentos\removidos\`; nada é apagado de vez.
+  para `dados\documentos\removidos\`; nada é apagado de vez. Envios cancelados ou abandonados são
+  varridos automaticamente para `dados\uploads\descartados\`.
 - A resposta com base em documento é uma **busca por frases**, não geração: o modelo não escreve o texto.
 
 ### Pensamento profundo e limpeza de conversa

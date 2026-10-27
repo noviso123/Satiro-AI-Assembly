@@ -115,11 +115,14 @@ responder com base nele, citando o nome do arquivo. A busca prioriza termos raro
 (peso IDF), e arquivos de texto no formato ANSI do Windows (Bloco de Notas antigo) são detectados
 e decodificados corretamente.
 
-- **Suportados:** `.pdf` (com texto embutido), `.docx`, `.txt`, `.md`, `.csv`.
+- **Suportados:** `.pdf` (com texto embutido **ou escaneado, lido pelo OCR do Windows**), `.docx`,
+  `.txt`, `.md`, `.csv`.
+- **OCR de PDFs escaneados:** quando um PDF não tem texto embutido (é imagem), o sistema renderiza
+  cada página e lê com o **OCR embutido do Windows** (sem instalar nada). Limites: até 30 páginas
+  por PDF, ~1–2 s por página — o anexo fica "processando" enquanto roda. Se o OCR não estiver
+  disponível (falta do pacote de idioma) ou não ler nada legível, o anexo é recusado com uma
+  mensagem clara em vez de indexar ruído.
 - **Não suportados:** `.doc` (Word antigo) e `.xls`. Salve como `.docx`.
-- **PDF escaneado** (imagem) não tem texto e não é lido: não há OCR no projeto. PDFs assim — ou com
-  fontes de codificação própria — são **rejeitados no anexo com uma mensagem clara**, em vez de
-  indexar trechos sem sentido.
 - Os documentos ficam em `dados\documentos\`. **Remover** tira o documento das respostas e move o texto
   para `dados\documentos\removidos\`; nada é apagado de vez. Envios cancelados ou abandonados são
   varridos automaticamente para `dados\uploads\descartados\`.

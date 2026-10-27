@@ -10,6 +10,17 @@
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+. (Join-Path $PSScriptRoot 'pdf_ocr.ps1')
+
+# Testa se um texto extraido e legivel (e nao ruido binario de PDF escaneado):
+# texto real tem espacos a cada poucas letras e maioria de letras; ruido, nao.
+function Teste-TextoLegivel([string]$t) {
+    if ($t.Length -le 500) { return $true }
+    $espacos = ([regex]::Matches($t, ' ')).Count
+    $letras = ([regex]::Matches($t, '\p{L}')).Count
+    return (($espacos / $t.Length) -ge 0.06 -and ($letras / $t.Length) -ge 0.55)
+}
+
 $DOC_DIR = Join-Path $root 'dados\documentos'
 $DOC_INDICE = Join-Path $DOC_DIR 'indice.json'
 $DOC_REMOVIDOS = Join-Path $DOC_DIR 'removidos'
@@ -115,15 +126,20 @@ function Extrai-Texto([string]$caminho, [string]$nome) {
     if ($ext -eq '.docx') { return Texto-Docx $caminho }
     if ($ext -eq '.pdf') {
         $t = Texto-Pdf ([IO.File]::ReadAllBytes($caminho))
-        # guarda de qualidade: PDF escaneado ou com fontes nao suportadas vira ruído
-        # binário que pareceria indexado (milhares de "trechos" sem sentido). Texto
-        # real tem espaços a cada poucos letras e maioria de letras; ruído, não.
-        if ($t.Length -gt 500) {
-            $espacos = ([regex]::Matches($t, ' ')).Count
-            $letras = ([regex]::Matches($t, '\p{L}')).Count
-            if (($espacos / $t.Length) -lt 0.06 -or ($letras / $t.Length) -lt 0.55) {
-                throw 'nao consegui extrair texto legivel deste PDF (ele parece escaneado ou usa fontes nao suportadas pelo extrator)'
+        # PDF escaneado nao tem texto embutido: vazio ja e gatilho de OCR, e texto
+        # ruidoso (fontes proprias) tambem
+        if ([string]::IsNullOrWhiteSpace($t) -or -not (Teste-TextoLegivel $t)) {
+            # segunda chance com o OCR embutido do Windows (renderiza e le cada pagina)
+            $motor = Teste-PdfOcr
+            if ($motor) {
+                $t = Converte-PdfOcr $caminho $motor
             }
+        }
+        if (-not (Teste-TextoLegivel $t)) {
+            if ($motor) {
+                throw 'o OCR do Windows tambem nao conseguiu ler texto legivel deste PDF (escaneado com qualidade baixa ou paginas vazias?)'
+            }
+            throw 'nao consegui extrair texto legivel deste PDF (ele parece escaneado; e o OCR do Windows nao estava disponivel)'
         }
         return $t
     }
